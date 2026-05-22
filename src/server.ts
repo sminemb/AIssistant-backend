@@ -46,6 +46,11 @@ export async function buildServer(env: AppEnv) {
       });
     }
   });
+  app.setNotFoundHandler(async (_request, reply) => {
+    return reply.status(404).send({
+      error: { code: "ROUTE_NOT_FOUND", message: "Route not found" },
+    });
+  });
 
   app.get("/health", async () => ({ ok: true }));
 
