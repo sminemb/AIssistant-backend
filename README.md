@@ -155,7 +155,20 @@ Validation errors use `VALIDATION_FAILED` and include an `issues` array. Auth an
 }
 ```
 
-`TodayTaskDTO` is returned from `GET /today-tasks` as a `TaskDTO` in the `tasks` array. Today's Tasks are explicit Student selections, not tasks due today.
+`TodayTaskDTO`
+
+```ts
+{
+  id: string;
+  studentId: string;
+  taskId: string;
+  day: string;
+  createdAt: string;
+  task: TaskDTO;
+}
+```
+
+Today's Tasks are explicit Student selections, not tasks due today. `GET /dashboard/summary` returns flattened `todaysTasks: TaskDTO[]` for the authenticated landing page. Direct `/today-tasks` routes return selection records so clients can inspect the selected day and selected Task relationship.
 
 `MessageDTO`
 
@@ -235,7 +248,7 @@ Validation errors use `VALIDATION_FAILED` and include an `issues` array. Auth an
 - Auth routes return `{ student: StudentDTO }`, except logout returns `204`.
 - Course routes return `{ course: CourseDTO }` or `{ courses: CourseDTO[] }`.
 - Task routes return `{ task: TaskDTO }`, `{ tasks: TaskDTO[] }`, or `204` for delete/unselect.
-- Today's Tasks routes return `{ tasks: TaskDTO[] }` for reads and `{ task: TaskDTO }` for selection.
+- Today's Tasks routes return `{ todayTasks: TodayTaskDTO[] }` for reads and `{ todayTask: TodayTaskDTO }` for selection.
 - Dashboard Summary returns `DashboardSummaryDTO`.
 - Conversation routes return `{ conversation: ConversationDTO }` or `{ conversations: ConversationDTO[] }`.
 - `POST /conversations/:conversationId/messages` returns `{ studentMessage: MessageDTO, assistantMessage: MessageDTO, suggestedTasks: SuggestedTaskDTO[] }` synchronously.
