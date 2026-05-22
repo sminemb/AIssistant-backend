@@ -97,6 +97,8 @@ model Task {
   @@index([studentId, courseId])
   @@index([studentId, deletedAt])
   @@index([studentId, completedAt])
+  @@index([studentId, deletedAt, completedAt, dueDate])
+  @@index([studentId, deletedAt, completedAt, dueAt])
   @@index([dueDate])
   @@index([dueAt])
 }
@@ -132,6 +134,7 @@ model Conversation {
 
   @@index([studentId])
   @@index([studentId, deletedAt])
+  @@index([studentId, deletedAt, updatedAt])
 }
 
 model Message {
@@ -172,4 +175,5 @@ model SuggestedTask {
   @@index([studentId])
   @@index([conversationId])
   @@index([studentId, state])
+  @@index([conversationId, state])
 }

@@ -15,12 +15,30 @@ Separate REST JSON backend for AIssistant, an academic study assistant for stude
 ```bash
 npm install
 cp .env.example .env
+createdb aissistant
 npm run prisma:generate
 npm run prisma:migrate
 npm run dev
 ```
 
 The API runs on `PORT` from `.env`, defaulting to `4000`.
+
+## Database
+
+AIssistant uses PostgreSQL through Prisma. For local development, create a database that matches `DATABASE_URL`:
+
+```bash
+createdb aissistant
+npm run prisma:generate
+npm run prisma:migrate
+```
+
+`npm run prisma:migrate` applies the checked-in migrations in development and creates new migrations when the schema changes. In CI, staging, or production, apply checked-in migrations without creating new files:
+
+```bash
+npm run prisma:generate
+npm run prisma:deploy
+```
 
 ## Environment
 
