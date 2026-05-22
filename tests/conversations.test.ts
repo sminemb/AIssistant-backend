@@ -135,12 +135,16 @@ function includeConversationRelations(
   if (include?.messages?.take !== undefined) {
     messages = messages.slice(0, include.messages.take);
   }
+  const suggestedTasks = store.suggestedTasks
+    .filter((suggestedTask) => suggestedTask.conversationId === conversation.id)
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+    .map((suggestedTask) => includeSuggestedTaskCourse(suggestedTask));
 
   return {
     ...conversation,
     ...(include?.course ? { course: store.courses.find((course) => course.id === conversation.courseId) ?? null } : {}),
     ...(include?.messages ? { messages } : {}),
-    ...(include?.suggestedTasks ? { suggestedTasks: [] } : {}),
+    ...(include?.suggestedTasks ? { suggestedTasks } : {}),
   };
 }
 
@@ -372,6 +376,15 @@ const prismaMock = vi.hoisted(() => ({
     findMany: vi.fn(async () => []),
   },
   suggestedTask: {
+    findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+      return (
+        store.suggestedTasks.find((suggestedTask) => {
+          if (where.id && suggestedTask.id !== where.id) return false;
+          if (where.studentId && suggestedTask.studentId !== where.studentId) return false;
+          return true;
+        }) ?? null
+      );
+    }),
     create: vi.fn(async ({ data, include }: { data: Record<string, unknown>; include?: { course?: boolean; createdTask?: boolean } }) => {
       const now = new Date();
       const suggestedTask = {
@@ -392,7 +405,25 @@ const prismaMock = vi.hoisted(() => ({
       store.suggestedTasks.push(suggestedTask);
       return include?.course || include?.createdTask ? includeSuggestedTaskCourse(suggestedTask) : suggestedTask;
     }),
+    update: vi.fn(
+      async ({
+        where,
+        data,
+        include,
+      }: {
+        where: { id: string };
+        data: Record<string, unknown>;
+        include?: { course?: boolean; createdTask?: boolean };
+      }) => {
+        const suggestedTask = store.suggestedTasks.find((candidate) => candidate.id === where.id);
+        if (!suggestedTask) throw new Error("Suggested Task not found");
+        applyDefined(suggestedTask, data);
+        suggestedTask.updatedAt = new Date();
+        return include?.course || include?.createdTask ? includeSuggestedTaskCourse(suggestedTask) : suggestedTask;
+      },
+    ),
   },
+  $transaction: vi.fn(async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock)),
   $disconnect: vi.fn(async () => undefined),
 }));
 
@@ -747,6 +778,295 @@ describe("Conversation and Message lifecycle HTTP contract", () => {
           course: { id: biology.id, name: "Biology" },
         },
       ],
+    });
+
+    const view = await app.inject({
+      method: "GET",
+      url: `/conversations/${conversation.json().conversation.id}`,
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(view.statusCode).toBe(200);
+    expect(view.json().conversation.suggestedTasks).toEqual([
+      expect.objectContaining({
+        id: reply.json().suggestedTasks[0].id,
+        title: "Work on Read chapter 8",
+        state: "PENDING",
+        createdTaskId: null,
+        createdTask: null,
+      }),
+    ]);
+
+    await app.close();
+  });
+
+  it("lets a Student confirm a pending Suggested Task into a real Task", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+    const biology = await createCourse(app, auth, "Biology");
+
+    await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { courseId: biology.id, title: "Read chapter 8", dueDate: "2026-05-30" },
+    });
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/conversations",
+      headers: authHeaders(auth),
+      payload: { title: "Planning", courseId: biology.id },
+    });
+    const reply = await app.inject({
+      method: "POST",
+      url: `/conversations/${conversation.json().conversation.id}/messages`,
+      headers: authHeaders(auth),
+      payload: { content: "Please make a study plan" },
+    });
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${reply.json().suggestedTasks[0].id}/confirm`,
+      headers: authHeaders(auth),
+    });
+
+    expect(confirm.statusCode).toBe(200);
+    expect(confirm.json()).toMatchObject({
+      task: {
+        studentId: auth.student.id,
+        courseId: biology.id,
+        title: "Work on Read chapter 8",
+        notes: "Suggested by the AI Study Assistant from your due soon tasks.",
+        course: { id: biology.id, name: "Biology" },
+      },
+      suggestedTask: {
+        id: reply.json().suggestedTasks[0].id,
+        state: "CONFIRMED",
+        title: "Work on Read chapter 8",
+      },
+    });
+    expect(confirm.json().suggestedTask.createdTaskId).toBe(confirm.json().task.id);
+    expect(confirm.json().suggestedTask.createdTask).toMatchObject({
+      id: confirm.json().task.id,
+      title: "Work on Read chapter 8",
+    });
+
+    const view = await app.inject({
+      method: "GET",
+      url: `/conversations/${conversation.json().conversation.id}`,
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(view.json().conversation.suggestedTasks).toEqual([
+      expect.objectContaining({
+        id: reply.json().suggestedTasks[0].id,
+        state: "CONFIRMED",
+        createdTaskId: confirm.json().task.id,
+        createdTask: expect.objectContaining({ id: confirm.json().task.id }),
+      }),
+    ]);
+
+    await app.close();
+  });
+
+  it("lets a Student dismiss a pending Suggested Task without creating a Task", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+    const biology = await createCourse(app, auth, "Biology");
+
+    await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { courseId: biology.id, title: "Read chapter 8", dueDate: "2026-05-30" },
+    });
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/conversations",
+      headers: authHeaders(auth),
+      payload: { title: "Planning", courseId: biology.id },
+    });
+    const reply = await app.inject({
+      method: "POST",
+      url: `/conversations/${conversation.json().conversation.id}/messages`,
+      headers: authHeaders(auth),
+      payload: { content: "Please make a study plan" },
+    });
+
+    const dismiss = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${reply.json().suggestedTasks[0].id}/dismiss`,
+      headers: authHeaders(auth),
+    });
+
+    expect(dismiss.statusCode).toBe(200);
+    expect(dismiss.json()).toMatchObject({
+      suggestedTask: {
+        id: reply.json().suggestedTasks[0].id,
+        state: "DISMISSED",
+        createdTaskId: null,
+        title: "Work on Read chapter 8",
+      },
+    });
+
+    const view = await app.inject({
+      method: "GET",
+      url: `/conversations/${conversation.json().conversation.id}`,
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(view.json().conversation.suggestedTasks).toEqual([
+      expect.objectContaining({
+        id: reply.json().suggestedTasks[0].id,
+        state: "DISMISSED",
+        createdTaskId: null,
+        createdTask: null,
+      }),
+    ]);
+    expect(store.tasks).toHaveLength(1);
+
+    await app.close();
+  });
+
+  it("rejects confirmation when the Suggested Task would duplicate a non-deleted Task title", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+    const biology = await createCourse(app, auth, "Biology");
+
+    await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { courseId: biology.id, title: "Read chapter 8", dueDate: "2026-05-30" },
+    });
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/conversations",
+      headers: authHeaders(auth),
+      payload: { title: "Planning", courseId: biology.id },
+    });
+    const reply = await app.inject({
+      method: "POST",
+      url: `/conversations/${conversation.json().conversation.id}/messages`,
+      headers: authHeaders(auth),
+      payload: { content: "Please make a study plan" },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { courseId: biology.id, title: "Work on Read chapter 8" },
+    });
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${reply.json().suggestedTasks[0].id}/confirm`,
+      headers: authHeaders(auth),
+    });
+
+    expect(confirm.statusCode).toBe(409);
+    expect(confirm.json()).toMatchObject({
+      error: { code: "TASK_TITLE_EXISTS" },
+    });
+    expect(store.suggestedTasks[0]).toMatchObject({
+      id: reply.json().suggestedTasks[0].id,
+      state: "PENDING",
+      createdTaskId: null,
+    });
+    expect(store.tasks.filter((task) => task.title === "Work on Read chapter 8")).toHaveLength(1);
+
+    await app.close();
+  });
+
+  it("rejects repeated confirmation or dismissal of non-pending Suggested Tasks", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+    const biology = await createCourse(app, auth, "Biology");
+
+    await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { courseId: biology.id, title: "Read chapter 8", dueDate: "2026-05-30" },
+    });
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/conversations",
+      headers: authHeaders(auth),
+      payload: { title: "Planning", courseId: biology.id },
+    });
+    const firstReply = await app.inject({
+      method: "POST",
+      url: `/conversations/${conversation.json().conversation.id}/messages`,
+      headers: authHeaders(auth),
+      payload: { content: "Please make a study plan" },
+    });
+    const confirmedSuggestionId = firstReply.json().suggestedTasks[0].id;
+
+    const firstConfirm = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${confirmedSuggestionId}/confirm`,
+      headers: authHeaders(auth),
+    });
+    const secondConfirm = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${confirmedSuggestionId}/confirm`,
+      headers: authHeaders(auth),
+    });
+    const dismissConfirmed = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${confirmedSuggestionId}/dismiss`,
+      headers: authHeaders(auth),
+    });
+
+    expect(firstConfirm.statusCode).toBe(200);
+    expect(secondConfirm.statusCode).toBe(409);
+    expect(secondConfirm.json()).toMatchObject({
+      error: { code: "SUGGESTED_TASK_NOT_PENDING" },
+    });
+    expect(dismissConfirmed.statusCode).toBe(409);
+    expect(dismissConfirmed.json()).toMatchObject({
+      error: { code: "SUGGESTED_TASK_NOT_PENDING" },
+    });
+
+    const secondReply = await app.inject({
+      method: "POST",
+      url: `/conversations/${conversation.json().conversation.id}/messages`,
+      headers: authHeaders(auth),
+      payload: { content: "Please make another study plan" },
+    });
+    const dismissedSuggestionId = secondReply.json().suggestedTasks[0].id;
+    const firstDismiss = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${dismissedSuggestionId}/dismiss`,
+      headers: authHeaders(auth),
+    });
+    const secondDismiss = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${dismissedSuggestionId}/dismiss`,
+      headers: authHeaders(auth),
+    });
+    const confirmDismissed = await app.inject({
+      method: "POST",
+      url: `/suggested-tasks/${dismissedSuggestionId}/confirm`,
+      headers: authHeaders(auth),
+    });
+
+    expect(firstDismiss.statusCode).toBe(200);
+    expect(secondDismiss.statusCode).toBe(409);
+    expect(secondDismiss.json()).toMatchObject({
+      error: { code: "SUGGESTED_TASK_NOT_PENDING" },
+    });
+    expect(confirmDismissed.statusCode).toBe(409);
+    expect(confirmDismissed.json()).toMatchObject({
+      error: { code: "SUGGESTED_TASK_NOT_PENDING" },
+    });
+    expect(store.suggestedTasks.find((suggestion) => suggestion.id === confirmedSuggestionId)).toMatchObject({
+      state: "CONFIRMED",
+    });
+    expect(store.suggestedTasks.find((suggestion) => suggestion.id === dismissedSuggestionId)).toMatchObject({
+      state: "DISMISSED",
+      createdTaskId: null,
     });
 
     await app.close();
