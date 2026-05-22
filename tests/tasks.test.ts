@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type StudentRecord = {
   id: string;
@@ -46,11 +46,20 @@ type TaskRecord = {
   updatedAt: Date;
 };
 
+type TodayTaskRecord = {
+  id: string;
+  studentId: string;
+  taskId: string;
+  day: Date;
+  createdAt: Date;
+};
+
 const store = vi.hoisted(() => ({
   students: [] as StudentRecord[],
   sessions: [] as SessionRecord[],
   courses: [] as CourseRecord[],
   tasks: [] as TaskRecord[],
+  todayTasks: [] as TodayTaskRecord[],
 }));
 
 function caseInsensitiveEquals(value: string, matcher: unknown) {
@@ -69,6 +78,14 @@ function includeCourse(task: TaskRecord) {
   return {
     ...task,
     course: store.courses.find((course) => course.id === task.courseId) ?? null,
+  };
+}
+
+function includeTask(todayTask: TodayTaskRecord) {
+  const task = store.tasks.find((candidate) => candidate.id === todayTask.taskId);
+  return {
+    ...todayTask,
+    task: task ? includeCourse(task) : null,
   };
 }
 
@@ -235,9 +252,62 @@ const prismaMock = vi.hoisted(() => ({
     }),
   },
   todayTask: {
-    findMany: vi.fn(async () => []),
-    upsert: vi.fn(),
-    deleteMany: vi.fn(async () => ({ count: 0 })),
+    findMany: vi.fn(async ({ where, include }: { where: Record<string, unknown>; include?: { task?: unknown } }) => {
+      return store.todayTasks
+        .filter((todayTask) => {
+          if (where.studentId && todayTask.studentId !== where.studentId) return false;
+          if (where.day instanceof Date && todayTask.day.getTime() !== where.day.getTime()) return false;
+          if (where.task && typeof where.task === "object" && "deletedAt" in where.task) {
+            const task = store.tasks.find((candidate) => candidate.id === todayTask.taskId);
+            if (!task || task.deletedAt !== where.task.deletedAt) return false;
+          }
+          return true;
+        })
+        .map((todayTask) => (include?.task ? includeTask(todayTask) : todayTask));
+    }),
+    upsert: vi.fn(
+      async ({
+        where,
+        create,
+        include,
+      }: {
+        where: { studentId_taskId_day: { studentId: string; taskId: string; day: Date } };
+        create: Record<string, unknown>;
+        include?: { task?: unknown };
+      }) => {
+        const unique = where.studentId_taskId_day;
+        let todayTask = store.todayTasks.find(
+          (candidate) =>
+            candidate.studentId === unique.studentId &&
+            candidate.taskId === unique.taskId &&
+            candidate.day.getTime() === unique.day.getTime(),
+        );
+
+        if (!todayTask) {
+          todayTask = {
+            id: randomUUID(),
+            studentId: String(create.studentId),
+            taskId: String(create.taskId),
+            day: create.day as Date,
+            createdAt: new Date(),
+          };
+          store.todayTasks.push(todayTask);
+        }
+
+        return include?.task ? includeTask(todayTask) : todayTask;
+      },
+    ),
+    deleteMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+      const before = store.todayTasks.length;
+      store.todayTasks = store.todayTasks.filter((todayTask) => {
+        if (where.studentId && todayTask.studentId !== where.studentId) return true;
+        if (where.taskId && todayTask.taskId !== where.taskId) return true;
+        if (where.day instanceof Date && todayTask.day.getTime() !== where.day.getTime()) return true;
+        return false;
+      });
+
+      return { count: before - store.todayTasks.length };
+    }),
   },
   $disconnect: vi.fn(async () => undefined),
 }));
@@ -309,7 +379,12 @@ describe("Task lifecycle HTTP contract", () => {
     store.sessions = [];
     store.courses = [];
     store.tasks = [];
+    store.todayTasks = [];
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("lets a Student create and list Course-associated and course-less Tasks", async () => {
@@ -590,6 +665,316 @@ describe("Task lifecycle HTTP contract", () => {
     expect(create.json()).toMatchObject({
       error: { code: "COURSE_NOT_FOUND" },
     });
+
+    await app.close();
+  });
+
+  it("lets a Student select and list Today's Tasks for a requested Student Day", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+
+    const create = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { title: "Review calculus notes" },
+    });
+    const task = create.json().task as TaskRecord;
+
+    const select = await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId: task.id, day: "2026-05-22" },
+    });
+
+    expect(select.statusCode).toBe(201);
+    expect(select.json()).toMatchObject({
+      todayTask: {
+        studentId: auth.student.id,
+        taskId: task.id,
+        day: "2026-05-22T00:00:00.000Z",
+        task: { id: task.id, title: "Review calculus notes" },
+      },
+    });
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/today-tasks?day=2026-05-22",
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toMatchObject({
+      todayTasks: [
+        {
+          taskId: task.id,
+          day: "2026-05-22T00:00:00.000Z",
+          task: { id: task.id, title: "Review calculus notes" },
+        },
+      ],
+    });
+
+    await app.close();
+  });
+
+  it("lets a Student unselect a Task from Today's Tasks for a requested Student Day", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+
+    const create = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { title: "Draft history outline" },
+    });
+    const taskId = create.json().task.id;
+
+    await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId, day: "2026-05-22" },
+    });
+
+    const unselect = await app.inject({
+      method: "DELETE",
+      url: `/today-tasks/${taskId}?day=2026-05-22`,
+      headers: authHeaders(auth),
+    });
+    const list = await app.inject({
+      method: "GET",
+      url: "/today-tasks?day=2026-05-22",
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(unselect.statusCode).toBe(204);
+    expect(list.json()).toEqual({ todayTasks: [] });
+
+    await app.close();
+  });
+
+  it("lets the same Task be selected on multiple Student Days", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+
+    const create = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { title: "Practice proofs" },
+    });
+    const taskId = create.json().task.id;
+
+    await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId, day: "2026-05-22" },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId, day: "2026-05-23" },
+    });
+
+    const firstDay = await app.inject({
+      method: "GET",
+      url: "/today-tasks?day=2026-05-22",
+      headers: { cookie: auth.cookie },
+    });
+    const secondDay = await app.inject({
+      method: "GET",
+      url: "/today-tasks?day=2026-05-23",
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(firstDay.json()).toMatchObject({
+      todayTasks: [{ taskId, day: "2026-05-22T00:00:00.000Z" }],
+    });
+    expect(secondDay.json()).toMatchObject({
+      todayTasks: [{ taskId, day: "2026-05-23T00:00:00.000Z" }],
+    });
+
+    await app.close();
+  });
+
+  it("keeps Today's Tasks independent of Due Date", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+
+    const create = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { title: "Prepare lab report", dueDate: "2026-06-01" },
+    });
+    const taskId = create.json().task.id;
+
+    const select = await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId, day: "2026-05-22" },
+    });
+    const list = await app.inject({
+      method: "GET",
+      url: "/today-tasks?day=2026-05-22",
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(select.statusCode).toBe(201);
+    expect(list.json()).toMatchObject({
+      todayTasks: [
+        {
+          taskId,
+          day: "2026-05-22T00:00:00.000Z",
+          task: {
+            title: "Prepare lab report",
+            dueDate: "2026-06-01T00:00:00.000Z",
+          },
+        },
+      ],
+    });
+
+    await app.close();
+  });
+
+  it("rejects deleted Task selection and excludes deleted Tasks from Today's Tasks", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+
+    const selected = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { title: "Read economics case" },
+    });
+    const deletedBeforeSelection = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { title: "Review deleted notes" },
+    });
+    const selectedTaskId = selected.json().task.id;
+    const deletedTaskId = deletedBeforeSelection.json().task.id;
+
+    await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId: selectedTaskId, day: "2026-05-22" },
+    });
+    await app.inject({
+      method: "DELETE",
+      url: `/tasks/${selectedTaskId}`,
+      headers: authHeaders(auth),
+    });
+    await app.inject({
+      method: "DELETE",
+      url: `/tasks/${deletedTaskId}`,
+      headers: authHeaders(auth),
+    });
+
+    const selectDeleted = await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId: deletedTaskId, day: "2026-05-22" },
+    });
+    const list = await app.inject({
+      method: "GET",
+      url: "/today-tasks?day=2026-05-22",
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(selectDeleted.statusCode).toBe(409);
+    expect(selectDeleted.json()).toMatchObject({
+      error: { code: "TASK_DELETED" },
+    });
+    expect(list.json()).toEqual({ todayTasks: [] });
+
+    await app.close();
+  });
+
+  it("uses the Student Day when no day is requested", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-05-21T16:30:00.000Z"));
+
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+
+    const create = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { title: "Morning Manila review" },
+    });
+    const taskId = create.json().task.id;
+
+    const select = await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId },
+    });
+    const currentStudentDay = await app.inject({
+      method: "GET",
+      url: "/today-tasks",
+      headers: { cookie: auth.cookie },
+    });
+    const previousUtcDay = await app.inject({
+      method: "GET",
+      url: "/today-tasks?day=2026-05-21",
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(select.statusCode).toBe(201);
+    expect(currentStudentDay.json()).toMatchObject({
+      todayTasks: [{ taskId, day: "2026-05-22T00:00:00.000Z" }],
+    });
+    expect(previousUtcDay.json()).toEqual({ todayTasks: [] });
+
+    await app.close();
+  });
+
+  it("keeps selecting the same Task for the same Student Day idempotent", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+
+    const create = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { title: "Retryable focus item" },
+    });
+    const taskId = create.json().task.id;
+
+    const firstSelect = await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId, day: "2026-05-22" },
+    });
+    const secondSelect = await app.inject({
+      method: "POST",
+      url: "/today-tasks",
+      headers: authHeaders(auth),
+      payload: { taskId, day: "2026-05-22" },
+    });
+    const list = await app.inject({
+      method: "GET",
+      url: "/today-tasks?day=2026-05-22",
+      headers: { cookie: auth.cookie },
+    });
+
+    expect(firstSelect.statusCode).toBe(201);
+    expect(secondSelect.statusCode).toBe(201);
+    expect(list.json()).toMatchObject({
+      todayTasks: [{ taskId, day: "2026-05-22T00:00:00.000Z" }],
+    });
+    expect(list.json().todayTasks).toHaveLength(1);
 
     await app.close();
   });

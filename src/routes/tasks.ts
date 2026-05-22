@@ -184,7 +184,7 @@ export async function tasksRoutes(app: FastifyInstance) {
     const day = query.day ? new Date(`${query.day}T00:00:00.000Z`) : todayFor(student.timezone);
 
     const todayTasks = await prisma.todayTask.findMany({
-      where: { studentId: student.id, day },
+      where: { studentId: student.id, day, task: { deletedAt: null } },
       include: { task: { include: { course: true } } },
       orderBy: { createdAt: "asc" },
     });
