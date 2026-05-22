@@ -30,7 +30,7 @@ export async function buildServer(env: AppEnv) {
         return;
       }
 
-      callback(new Error("Origin not allowed"), false);
+      callback(null, false);
     },
   });
   await app.register(cookie, { secret: env.SESSION_SECRET });
