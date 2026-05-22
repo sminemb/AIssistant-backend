@@ -734,6 +734,44 @@ describe("Conversation and Message lifecycle HTTP contract", () => {
     await app.close();
   });
 
+  it("keeps non-AI Conversation routes working when production assistant provider config is missing", async () => {
+    const app = await buildServer({ ...env, NODE_ENV: "production" });
+    const auth = await registerStudent(app, "student@example.com");
+
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/conversations",
+      headers: authHeaders(auth),
+      payload: { title: "Planning" },
+    });
+    const list = await app.inject({
+      method: "GET",
+      url: "/conversations",
+      headers: { cookie: auth.cookie },
+    });
+    const createMessage = await app.inject({
+      method: "POST",
+      url: `/conversations/${conversation.json().conversation.id}/messages`,
+      headers: authHeaders(auth),
+      payload: { content: "Explain photosynthesis" },
+    });
+
+    expect(conversation.statusCode).toBe(201);
+    expect(list.statusCode).toBe(200);
+    expect(list.json().conversations).toEqual([
+      expect.objectContaining({ id: conversation.json().conversation.id, title: "Planning" }),
+    ]);
+    expect(createMessage.statusCode).toBe(503);
+    expect(createMessage.json()).toMatchObject({
+      error: {
+        code: "ASSISTANT_PROVIDER_NOT_CONFIGURED",
+        message: "AI Study Assistant provider is not configured",
+      },
+    });
+
+    await app.close();
+  });
+
   it("returns Student Message, Assistant Message, and Suggested Tasks synchronously for study plans", async () => {
     const app = await buildServer(env);
     const auth = await registerStudent(app, "student@example.com");

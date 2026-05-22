@@ -2,13 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { buildAssistantContext } from "../assistant/context.js";
-import { PlaceholderAssistantProvider } from "../assistant/provider.js";
+import { createAssistantProvider } from "../assistant/provider.js";
 import { prisma } from "../db/prisma.js";
 import { assertCourseBelongsToStudent, parseDueInput } from "../domain/tasks.js";
 import { HttpError } from "../http/errors.js";
 import { parseBody, parseParams } from "../http/validation.js";
-
-const assistantProvider = new PlaceholderAssistantProvider();
 
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
 
@@ -109,6 +107,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
     });
 
     const context = await buildAssistantContext(prisma, student, conversation.id);
+    const assistantProvider = createAssistantProvider(app.config);
     const assistantReply = await assistantProvider.reply(body.content, context);
 
     const assistantMessage = await prisma.message.create({

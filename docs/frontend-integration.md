@@ -1,6 +1,6 @@
 # Frontend Integration Guide
 
-This guide records the intended future integration path between the existing Next.js frontend and the AIssistant backend.
+This guide records the intended future integration path between the existing Next.js frontend and the AIssistant backend. Do not edit the frontend as part of backend-only work.
 
 ## Integration Shape
 
