@@ -50,12 +50,45 @@ type MessageRecord = {
   createdAt: Date;
 };
 
+type TaskRecord = {
+  id: string;
+  studentId: string;
+  courseId: string | null;
+  title: string;
+  notes: string | null;
+  dueDateKind: string | null;
+  dueDate: Date | null;
+  dueAt: Date | null;
+  completedAt: Date | null;
+  deletedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type SuggestedTaskRecord = {
+  id: string;
+  studentId: string;
+  conversationId: string;
+  courseId: string | null;
+  createdTaskId: string | null;
+  title: string;
+  notes: string | null;
+  dueDateKind: string | null;
+  dueDate: Date | null;
+  dueAt: Date | null;
+  state: "PENDING" | "CONFIRMED" | "DISMISSED";
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 const store = vi.hoisted(() => ({
   students: [] as StudentRecord[],
   sessions: [] as SessionRecord[],
   courses: [] as CourseRecord[],
   conversations: [] as ConversationRecord[],
   messages: [] as MessageRecord[],
+  tasks: [] as TaskRecord[],
+  suggestedTasks: [] as SuggestedTaskRecord[],
 }));
 
 function caseInsensitiveEquals(value: string, matcher: unknown) {
@@ -70,6 +103,21 @@ function includeCourse(conversation: ConversationRecord) {
   return {
     ...conversation,
     course: store.courses.find((course) => course.id === conversation.courseId) ?? null,
+  };
+}
+
+function includeTaskCourse(task: TaskRecord) {
+  return {
+    ...task,
+    course: store.courses.find((course) => course.id === task.courseId) ?? null,
+  };
+}
+
+function includeSuggestedTaskCourse(suggestedTask: SuggestedTaskRecord) {
+  return {
+    ...suggestedTask,
+    course: store.courses.find((course) => course.id === suggestedTask.courseId) ?? null,
+    createdTask: store.tasks.find((task) => task.id === suggestedTask.createdTaskId) ?? null,
   };
 }
 
@@ -267,13 +315,83 @@ const prismaMock = vi.hoisted(() => ({
     }),
   },
   task: {
-    findMany: vi.fn(async () => []),
+    findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+      return (
+        store.tasks.find((task) => {
+          if (where.id && task.id !== where.id) return false;
+          if (where.studentId && task.studentId !== where.studentId) return false;
+          if (Object.hasOwn(where, "courseId") && task.courseId !== where.courseId) return false;
+          if (where.deletedAt === null && task.deletedAt !== null) return false;
+          if (where.title && !caseInsensitiveEquals(task.title, where.title)) return false;
+          return true;
+        }) ?? null
+      );
+    }),
+    findMany: vi.fn(async ({ where, include }: { where: Record<string, unknown>; include?: { course?: boolean } }) => {
+      return store.tasks
+        .filter((task) => {
+          if (where.studentId && task.studentId !== where.studentId) return false;
+          if (where.deletedAt === null && task.deletedAt !== null) return false;
+          if (where.completedAt === null && task.completedAt !== null) return false;
+          if (where.OR && Array.isArray(where.OR)) {
+            const matchesDueDate = where.OR.some((condition) => {
+              if (!task.dueDate) return false;
+              const dueDate = condition.dueDate as Record<string, Date>;
+              if (dueDate.lt && !(task.dueDate < dueDate.lt)) return false;
+              if (dueDate.gte && !(task.dueDate >= dueDate.gte)) return false;
+              if (dueDate.lte && !(task.dueDate <= dueDate.lte)) return false;
+              return true;
+            });
+            if (!matchesDueDate) return false;
+          }
+          return true;
+        })
+        .map((task) => (include?.course ? includeTaskCourse(task) : task));
+    }),
+    create: vi.fn(async ({ data, include }: { data: Record<string, unknown>; include?: { course?: boolean } }) => {
+      const now = new Date();
+      const task = {
+        id: randomUUID(),
+        studentId: String(data.studentId),
+        courseId: data.courseId ? String(data.courseId) : null,
+        title: String(data.title),
+        notes: data.notes ? String(data.notes) : null,
+        dueDateKind: data.dueDateKind ? String(data.dueDateKind) : null,
+        dueDate: (data.dueDate as Date | null) ?? null,
+        dueAt: (data.dueAt as Date | null) ?? null,
+        completedAt: null,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.tasks.push(task);
+      return include?.course ? includeTaskCourse(task) : task;
+    }),
   },
   todayTask: {
     findMany: vi.fn(async () => []),
   },
   suggestedTask: {
-    create: vi.fn(),
+    create: vi.fn(async ({ data, include }: { data: Record<string, unknown>; include?: { course?: boolean; createdTask?: boolean } }) => {
+      const now = new Date();
+      const suggestedTask = {
+        id: randomUUID(),
+        studentId: String(data.studentId),
+        conversationId: String(data.conversationId),
+        courseId: data.courseId ? String(data.courseId) : null,
+        createdTaskId: null,
+        title: String(data.title),
+        notes: data.notes ? String(data.notes) : null,
+        dueDateKind: data.dueDateKind ? String(data.dueDateKind) : null,
+        dueDate: (data.dueDate as Date | null) ?? null,
+        dueAt: (data.dueAt as Date | null) ?? null,
+        state: "PENDING" as const,
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.suggestedTasks.push(suggestedTask);
+      return include?.course || include?.createdTask ? includeSuggestedTaskCourse(suggestedTask) : suggestedTask;
+    }),
   },
   $disconnect: vi.fn(async () => undefined),
 }));
@@ -346,6 +464,8 @@ describe("Conversation and Message lifecycle HTTP contract", () => {
     store.courses = [];
     store.conversations = [];
     store.messages = [];
+    store.tasks = [];
+    store.suggestedTasks = [];
     vi.clearAllMocks();
   });
 
@@ -578,6 +698,55 @@ describe("Conversation and Message lifecycle HTTP contract", () => {
     expect(createMessage.statusCode).toBe(404);
     expect(createMessage.json()).toMatchObject({
       error: { code: "CONVERSATION_NOT_FOUND" },
+    });
+
+    await app.close();
+  });
+
+  it("returns Student Message, Assistant Message, and Suggested Tasks synchronously for study plans", async () => {
+    const app = await buildServer(env);
+    const auth = await registerStudent(app, "student@example.com");
+    const biology = await createCourse(app, auth, "Biology");
+
+    await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeaders(auth),
+      payload: { courseId: biology.id, title: "Read chapter 8", dueDate: "2026-05-30" },
+    });
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/conversations",
+      headers: authHeaders(auth),
+      payload: { title: "Planning", courseId: biology.id },
+    });
+
+    const reply = await app.inject({
+      method: "POST",
+      url: `/conversations/${conversation.json().conversation.id}/messages`,
+      headers: authHeaders(auth),
+      payload: { content: "Please make a study plan" },
+    });
+
+    expect(reply.statusCode).toBe(201);
+    expect(reply.json()).toMatchObject({
+      studentMessage: {
+        author: "STUDENT",
+        content: "Please make a study plan",
+      },
+      assistantMessage: {
+        author: "ASSISTANT",
+        content: "I found a few priorities and drafted Suggested Tasks for your study plan. Confirm the ones you want to add.",
+      },
+      suggestedTasks: [
+        {
+          title: "Work on Read chapter 8",
+          notes: "Suggested by the AI Study Assistant from your due soon tasks.",
+          courseId: biology.id,
+          state: "PENDING",
+          course: { id: biology.id, name: "Biology" },
+        },
+      ],
     });
 
     await app.close();
