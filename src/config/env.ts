@@ -6,8 +6,8 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   SESSION_SECRET: z.string().min(32),
   FRONTEND_ORIGINS: z.string().default("http://localhost:3000"),
-  ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
