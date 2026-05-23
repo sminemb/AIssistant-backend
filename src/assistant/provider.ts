@@ -1,30 +1,24 @@
-import type { Task } from "@prisma/client";
 import { z } from "zod";
 
 import { HttpError } from "../http/errors.js";
 
-export type AssistantContext = {
-  courses: Array<{ id: string; name: string; archivedAt: Date | null }>;
-  dueSoonTasks: Task[];
-  todaysTasks: Task[];
-  recentMessages: Array<{ author: "STUDENT" | "ASSISTANT"; content: string }>;
-};
-
-export type AssistantSuggestedTask = {
-  title: string;
-  notes?: string;
-  courseId?: string | null;
-  dueDate?: string;
-  dueAt?: string;
-};
-
-export type AssistantReply = {
+export type StudyQuestionReply = {
   content: string;
-  suggestedTasks: AssistantSuggestedTask[];
+};
+
+export type GeneratedQuizQuestion = {
+  questionText: string;
+  options: string[];
+  correctOptionIndex: number;
+};
+
+export type GeneratedQuiz = {
+  questions: GeneratedQuizQuestion[];
 };
 
 export interface AssistantProvider {
-  reply(prompt: string, context: AssistantContext): Promise<AssistantReply>;
+  answerStudyQuestion(questionText: string): Promise<StudyQuestionReply>;
+  generateQuiz(quizTopic: string, questionCount: number): Promise<GeneratedQuiz>;
 }
 
 type AssistantProviderEnv = {
@@ -37,47 +31,20 @@ type Fetch = typeof fetch;
 
 const anthropicReplySchema = z.object({
   content: z.string().trim().min(1),
-  suggestedTasks: z
-    .array(
-      z.object({
-        title: z.string().trim().min(1),
-        notes: z.string().trim().optional(),
-        courseId: z.string().nullable().optional(),
-        dueDate: z.string().optional(),
-        dueAt: z.string().optional(),
-      }),
-    )
-    .default([]),
 });
 
-function taskContext(task: Task) {
-  return {
-    id: task.id,
-    courseId: task.courseId,
-    title: task.title,
-    notes: task.notes,
-    dueDateKind: task.dueDateKind,
-    dueDate: task.dueDate?.toISOString() ?? null,
-    dueAt: task.dueAt?.toISOString() ?? null,
-    completedAt: task.completedAt?.toISOString() ?? null,
-  };
-}
-
-function buildAnthropicPrompt(prompt: string, context: AssistantContext) {
-  return JSON.stringify({
-    studentMessage: prompt,
-    assistantContext: {
-      courses: context.courses.map((course) => ({
-        id: course.id,
-        name: course.name,
-        archivedAt: course.archivedAt?.toISOString() ?? null,
-      })),
-      dueSoonTasks: context.dueSoonTasks.map(taskContext),
-      todaysTasks: context.todaysTasks.map(taskContext),
-      recentMessages: context.recentMessages,
-    },
-  });
-}
+const anthropicQuizSchema = z.object({
+  questions: z
+    .array(
+      z.object({
+        questionText: z.string().trim().min(1),
+        options: z.array(z.string().trim().min(1)).length(4),
+        correctOptionIndex: z.number().int().min(0).max(3),
+      }),
+    )
+    .min(1)
+    .max(10),
+});
 
 function textFromAnthropicResponse(responseBody: unknown) {
   if (!responseBody || typeof responseBody !== "object" || !("content" in responseBody)) {
@@ -100,7 +67,7 @@ function textFromAnthropicResponse(responseBody: unknown) {
     .trim();
 }
 
-function parseAssistantReply(text: string): AssistantReply {
+function parseStudyQuestionReply(text: string): StudyQuestionReply {
   try {
     const parsed = anthropicReplySchema.safeParse(JSON.parse(text));
     if (parsed.success) {
@@ -110,11 +77,28 @@ function parseAssistantReply(text: string): AssistantReply {
     // Fall through to treating provider text as the assistant response.
   }
 
-  return { content: text || "I could not produce a study response right now.", suggestedTasks: [] };
+  return { content: text || "I could not produce a study response right now." };
+}
+
+function parseGeneratedQuiz(text: string, questionCount: number): GeneratedQuiz {
+  try {
+    const parsed = anthropicQuizSchema.safeParse(JSON.parse(text));
+    if (parsed.success && parsed.data.questions.length === questionCount) {
+      return parsed.data;
+    }
+  } catch {
+    // Fall through to a stable provider failure.
+  }
+
+  throw new HttpError(502, "ASSISTANT_PROVIDER_INVALID_RESPONSE", "AI Study Assistant provider returned invalid quiz data");
 }
 
 class MissingAssistantProvider implements AssistantProvider {
-  async reply(): Promise<AssistantReply> {
+  async answerStudyQuestion(): Promise<StudyQuestionReply> {
+    throw new HttpError(503, "ASSISTANT_PROVIDER_NOT_CONFIGURED", "AI Study Assistant provider is not configured");
+  }
+
+  async generateQuiz(): Promise<GeneratedQuiz> {
     throw new HttpError(503, "ASSISTANT_PROVIDER_NOT_CONFIGURED", "AI Study Assistant provider is not configured");
   }
 }
@@ -126,7 +110,7 @@ export class AnthropicAssistantProvider implements AssistantProvider {
     private readonly fetchImpl: Fetch = globalThis.fetch,
   ) {}
 
-  async reply(prompt: string, context: AssistantContext): Promise<AssistantReply> {
+  private async request(system: string, content: unknown) {
     const response = await this.fetchImpl("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -137,9 +121,8 @@ export class AnthropicAssistantProvider implements AssistantProvider {
       body: JSON.stringify({
         model: this.model,
         max_tokens: 1200,
-        system:
-          "You are the AI Study Assistant inside AIssistant. Use only the supplied Assistant Context. Return JSON with content and suggestedTasks.",
-        messages: [{ role: "user", content: buildAnthropicPrompt(prompt, context) }],
+        system,
+        messages: [{ role: "user", content: JSON.stringify(content) }],
       }),
     });
 
@@ -147,8 +130,23 @@ export class AnthropicAssistantProvider implements AssistantProvider {
       throw new HttpError(502, "ASSISTANT_PROVIDER_FAILED", "AI Study Assistant provider request failed");
     }
 
-    const text = textFromAnthropicResponse(await response.json());
-    return parseAssistantReply(text);
+    return textFromAnthropicResponse(await response.json());
+  }
+
+  async answerStudyQuestion(questionText: string): Promise<StudyQuestionReply> {
+    const text = await this.request(
+      "You are the AI Study Assistant inside AIssistant. Answer only the current study question. Return JSON with a non-empty content string.",
+      { questionText },
+    );
+    return parseStudyQuestionReply(text);
+  }
+
+  async generateQuiz(quizTopic: string, questionCount: number): Promise<GeneratedQuiz> {
+    const text = await this.request(
+      "You are the AI Study Assistant inside AIssistant. Generate a multiple-choice quiz. Return JSON with questions; each question has questionText, exactly four options, and correctOptionIndex from 0 to 3.",
+      { quizTopic, questionCount },
+    );
+    return parseGeneratedQuiz(text, questionCount);
   }
 }
 
@@ -165,45 +163,19 @@ export function createAssistantProvider(env: AssistantProviderEnv, fetchImpl?: F
 }
 
 export class PlaceholderAssistantProvider implements AssistantProvider {
-  async reply(prompt: string, context: AssistantContext): Promise<AssistantReply> {
-    const normalized = prompt.toLowerCase();
-
-    if (normalized.includes("study plan")) {
-      const suggestedTasks = context.dueSoonTasks.slice(0, 3).map((task) => ({
-        title: `Work on ${task.title}`,
-        notes: "Suggested by the AI Study Assistant from your due soon tasks.",
-        courseId: task.courseId,
-      }));
-
-      return {
-        content:
-          suggestedTasks.length > 0
-            ? "I found a few priorities and drafted Suggested Tasks for your study plan. Confirm the ones you want to add."
-            : "I can make a study plan once you have Tasks with Due Dates or tell me what you want to focus on.",
-        suggestedTasks,
-      };
-    }
-
-    if (normalized.includes("quiz")) {
-      return {
-        content:
-          "I can generate practice questions here in the Conversation. Persisted quizzes are outside the first backend scope.",
-        suggestedTasks: [],
-      };
-    }
-
-    if (normalized.includes("explain")) {
-      return {
-        content:
-          "Share the topic or Course, and I will break it into simple steps with an example.",
-        suggestedTasks: [],
-      };
-    }
-
+  async answerStudyQuestion(questionText: string): Promise<StudyQuestionReply> {
     return {
-      content:
-        "I can help with planning, explanations, practice questions, and study focus. Tell me what you want to work on next.",
-      suggestedTasks: [],
+      content: `Study answer: ${questionText}`,
+    };
+  }
+
+  async generateQuiz(quizTopic: string, questionCount: number): Promise<GeneratedQuiz> {
+    return {
+      questions: Array.from({ length: questionCount }, (_, index) => ({
+        questionText: `${quizTopic} practice question ${index + 1}`,
+        options: ["Option A", "Option B", "Option C", "Option D"],
+        correctOptionIndex: index % 4,
+      })),
     };
   }
 }

@@ -16,9 +16,7 @@ import { parseBody } from "../http/validation.js";
 const registerSchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase()),
   password: z.string().min(8),
-  displayName: z.string().trim().min(1).max(120),
-  timezone: z.string().trim().min(1).max(80),
-  avatarColor: z.string().trim().max(40).optional(),
+  name: z.string().trim().min(1).max(120),
 });
 
 const loginSchema = z.object({
@@ -55,9 +53,8 @@ export async function authRoutes(app: FastifyInstance) {
       data: {
         email: body.email,
         passwordHash,
-        displayName: body.displayName,
-        timezone: body.timezone,
-        avatarColor: body.avatarColor,
+        name: body.name,
+        studyProgress: { create: {} },
       },
     });
     const session = await createSession(prisma, student.id);

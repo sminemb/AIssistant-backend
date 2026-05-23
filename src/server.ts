@@ -9,11 +9,10 @@ import { prisma } from "./db/prisma.js";
 import { sendError } from "./http/errors.js";
 import { authPlugin } from "./plugins/auth.js";
 import { authRoutes } from "./routes/auth.js";
-import { conversationsRoutes } from "./routes/conversations.js";
-import { coursesRoutes } from "./routes/courses.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
-import { suggestedTasksRoutes } from "./routes/suggested-tasks.js";
-import { tasksRoutes } from "./routes/tasks.js";
+import { quizzesRoutes } from "./routes/quizzes.js";
+import { studyProgressRoutes } from "./routes/study-progress.js";
+import { studyQuestionsRoutes } from "./routes/study-questions.js";
 
 export async function buildServer(env: AppEnv) {
   const app = Fastify({ logger: env.NODE_ENV !== "test" });
@@ -55,11 +54,10 @@ export async function buildServer(env: AppEnv) {
   app.get("/health", async () => ({ ok: true }));
 
   await app.register(authRoutes);
-  await app.register(coursesRoutes);
-  await app.register(tasksRoutes);
   await app.register(dashboardRoutes);
-  await app.register(conversationsRoutes);
-  await app.register(suggestedTasksRoutes);
+  await app.register(studyQuestionsRoutes);
+  await app.register(quizzesRoutes);
+  await app.register(studyProgressRoutes);
 
   app.addHook("onClose", async () => {
     await prisma.$disconnect();

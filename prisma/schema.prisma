@@ -7,48 +7,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum DueDateKind {
-  DATE_ONLY
-  DATE_TIME
-}
-
-enum MessageAuthor {
-  STUDENT
-  ASSISTANT
-}
-
-enum SuggestedTaskState {
-  PENDING
-  CONFIRMED
-  DISMISSED
+enum QuizState {
+  GENERATED
+  COMPLETED
 }
 
 model Student {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  displayName  String
-  timezone     String
-  avatarColor  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id           Int      @id @default(autoincrement()) @map("student_id")
+  name         String   @db.VarChar(120)
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at")
 
   sessions       Session[]
-  courses        Course[]
-  tasks          Task[]
-  todayTasks     TodayTask[]
-  conversations  Conversation[]
-  messages       Message[]
-  suggestedTasks SuggestedTask[]
+  studyQuestions StudyQuestion[]
+  quizzes        Quiz[]
+  studyProgress  StudyProgress?
 }
 
 model Session {
-  id        String    @id @default(uuid())
-  studentId String
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  id        Int       @id @default(autoincrement()) @map("session_id")
+  studentId Int       @map("student_id")
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
@@ -56,124 +39,88 @@ model Session {
   @@index([expiresAt])
 }
 
-model Course {
-  id         String    @id @default(uuid())
-  studentId  String
-  name       String
-  archivedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  student       Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  tasks         Task[]
-  conversations Conversation[]
-  suggestedTasks SuggestedTask[]
-
-  @@index([studentId])
-  @@index([studentId, archivedAt])
-}
-
-model Task {
-  id          String       @id @default(uuid())
-  studentId   String
-  courseId    String?
-  title       String
-  notes       String?
-  dueDateKind DueDateKind?
-  dueDate     DateTime?    @db.Date
-  dueAt       DateTime?
-  completedAt DateTime?
-  deletedAt   DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+model StudyQuestion {
+  id              Int      @id @default(autoincrement()) @map("question_id")
+  studentId       Int      @map("student_id")
+  questionText    String   @map("question_text") @db.Text
+  chatbotResponse String   @map("chatbot_response") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  course  Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
-
-  todayTasks             TodayTask[]
-  confirmedSuggestedTasks SuggestedTask[] @relation("CreatedTask")
 
   @@index([studentId])
-  @@index([studentId, courseId])
-  @@index([studentId, deletedAt])
-  @@index([studentId, completedAt])
-  @@index([studentId, deletedAt, completedAt, dueDate])
-  @@index([studentId, deletedAt, completedAt, dueAt])
-  @@index([dueDate])
-  @@index([dueAt])
+  @@index([studentId, createdAt])
 }
 
-model TodayTask {
-  id        String   @id @default(uuid())
-  studentId String
-  taskId    String
-  day       DateTime @db.Date
-  createdAt DateTime @default(now())
+model Quiz {
+  id        Int       @id @default(autoincrement()) @map("quiz_id")
+  studentId Int       @map("student_id")
+  quizTopic String    @map("quiz_topic") @db.VarChar(200)
+  score     Float?
+  state     QuizState @default(GENERATED)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  task    Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@unique([studentId, taskId, day])
-  @@index([studentId, day])
-}
-
-model Conversation {
-  id        String    @id @default(uuid())
-  studentId String
-  courseId  String?
-  title     String?
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  course  Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
-
-  messages       Message[]
-  suggestedTasks SuggestedTask[]
+  student   Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  questions QuizQuestion[]
+  answers   QuizAnswer[]
 
   @@index([studentId])
-  @@index([studentId, deletedAt])
-  @@index([studentId, deletedAt, updatedAt])
-}
-
-model Message {
-  id             String        @id @default(uuid())
-  studentId      String
-  conversationId String
-  author         MessageAuthor
-  content        String
-  createdAt      DateTime      @default(now())
-
-  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  @@index([studentId])
-  @@index([conversationId, createdAt])
-}
-
-model SuggestedTask {
-  id             String             @id @default(uuid())
-  studentId      String
-  conversationId String
-  courseId        String?
-  createdTaskId  String?
-  title          String
-  notes          String?
-  dueDateKind    DueDateKind?
-  dueDate        DateTime?          @db.Date
-  dueAt          DateTime?
-  state          SuggestedTaskState @default(PENDING)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-
-  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  course       Course?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  createdTask  Task?        @relation("CreatedTask", fields: [createdTaskId], references: [id], onDelete: SetNull)
-
-  @@index([studentId])
-  @@index([conversationId])
   @@index([studentId, state])
-  @@index([conversationId, state])
+  @@index([studentId, quizTopic])
+}
+
+model QuizQuestion {
+  id           Int    @id @default(autoincrement()) @map("quiz_question_id")
+  quizId       Int    @map("quiz_id")
+  questionText String @map("question_text") @db.Text
+  position     Int
+
+  quiz    Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options QuizOption[]
+  answer  QuizAnswer?
+
+  @@unique([quizId, position])
+  @@index([quizId])
+}
+
+model QuizOption {
+  id             Int     @id @default(autoincrement()) @map("quiz_option_id")
+  quizQuestionId Int     @map("quiz_question_id")
+  optionText     String  @map("option_text") @db.Text
+  position       Int
+  isCorrect      Boolean @map("is_correct")
+
+  question       QuizQuestion @relation(fields: [quizQuestionId], references: [id], onDelete: Cascade)
+  selectedAnswers QuizAnswer[]
+
+  @@unique([quizQuestionId, position])
+  @@index([quizQuestionId])
+}
+
+model QuizAnswer {
+  id               Int     @id @default(autoincrement()) @map("quiz_answer_id")
+  quizId           Int     @map("quiz_id")
+  quizQuestionId   Int     @unique @map("quiz_question_id")
+  selectedOptionId Int     @map("selected_option_id")
+  isCorrect        Boolean @map("is_correct")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  quiz           Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizQuestion   QuizQuestion @relation(fields: [quizQuestionId], references: [id], onDelete: Cascade)
+  selectedOption QuizOption   @relation(fields: [selectedOptionId], references: [id], onDelete: Restrict)
+
+  @@index([quizId])
+  @@index([selectedOptionId])
+}
+
+model StudyProgress {
+  id              Int      @id @default(autoincrement()) @map("progress_id")
+  studentId       Int      @unique @map("student_id")
+  completedTopics Int      @default(0) @map("completed_topics")
+  totalQuizzes    Int      @default(0) @map("total_quizzes")
+  averageScore    Float    @default(0) @map("average_score")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 }

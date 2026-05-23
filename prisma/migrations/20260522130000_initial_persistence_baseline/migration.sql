@@ -1,242 +1,172 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
-
 -- CreateEnum
-CREATE TYPE "DueDateKind" AS ENUM ('DATE_ONLY', 'DATE_TIME');
-
--- CreateEnum
-CREATE TYPE "MessageAuthor" AS ENUM ('STUDENT', 'ASSISTANT');
-
--- CreateEnum
-CREATE TYPE "SuggestedTaskState" AS ENUM ('PENDING', 'CONFIRMED', 'DISMISSED');
+CREATE TYPE "QuizState" AS ENUM ('GENERATED', 'COMPLETED');
 
 -- CreateTable
 CREATE TABLE "Student" (
-    "id" TEXT NOT NULL,
-    "email" TEXT NOT NULL,
-    "passwordHash" TEXT NOT NULL,
-    "displayName" TEXT NOT NULL,
-    "timezone" TEXT NOT NULL,
-    "avatarColor" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "student_id" SERIAL NOT NULL,
+    "name" VARCHAR(120) NOT NULL,
+    "email" VARCHAR(255) NOT NULL,
+    "password_hash" VARCHAR(255) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "Student_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Student_pkey" PRIMARY KEY ("student_id")
 );
 
 -- CreateTable
 CREATE TABLE "Session" (
-    "id" TEXT NOT NULL,
-    "studentId" TEXT NOT NULL,
-    "tokenHash" TEXT NOT NULL,
-    "expiresAt" TIMESTAMP(3) NOT NULL,
-    "revokedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "session_id" SERIAL NOT NULL,
+    "student_id" INTEGER NOT NULL,
+    "token_hash" VARCHAR(64) NOT NULL,
+    "expires_at" TIMESTAMP(3) NOT NULL,
+    "revoked_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Session_pkey" PRIMARY KEY ("session_id")
 );
 
 -- CreateTable
-CREATE TABLE "Course" (
-    "id" TEXT NOT NULL,
-    "studentId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "archivedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+CREATE TABLE "StudyQuestion" (
+    "question_id" SERIAL NOT NULL,
+    "student_id" INTEGER NOT NULL,
+    "question_text" TEXT NOT NULL,
+    "chatbot_response" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "Course_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "StudyQuestion_pkey" PRIMARY KEY ("question_id")
 );
 
 -- CreateTable
-CREATE TABLE "Task" (
-    "id" TEXT NOT NULL,
-    "studentId" TEXT NOT NULL,
-    "courseId" TEXT,
-    "title" TEXT NOT NULL,
-    "notes" TEXT,
-    "dueDateKind" "DueDateKind",
-    "dueDate" DATE,
-    "dueAt" TIMESTAMP(3),
-    "completedAt" TIMESTAMP(3),
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+CREATE TABLE "Quiz" (
+    "quiz_id" SERIAL NOT NULL,
+    "student_id" INTEGER NOT NULL,
+    "quiz_topic" VARCHAR(200) NOT NULL,
+    "score" DOUBLE PRECISION,
+    "state" "QuizState" NOT NULL DEFAULT 'GENERATED',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "Task_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Quiz_pkey" PRIMARY KEY ("quiz_id")
 );
 
 -- CreateTable
-CREATE TABLE "TodayTask" (
-    "id" TEXT NOT NULL,
-    "studentId" TEXT NOT NULL,
-    "taskId" TEXT NOT NULL,
-    "day" DATE NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE "QuizQuestion" (
+    "quiz_question_id" SERIAL NOT NULL,
+    "quiz_id" INTEGER NOT NULL,
+    "question_text" TEXT NOT NULL,
+    "position" INTEGER NOT NULL,
 
-    CONSTRAINT "TodayTask_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "QuizQuestion_pkey" PRIMARY KEY ("quiz_question_id")
 );
 
 -- CreateTable
-CREATE TABLE "Conversation" (
-    "id" TEXT NOT NULL,
-    "studentId" TEXT NOT NULL,
-    "courseId" TEXT,
-    "title" TEXT,
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+CREATE TABLE "QuizOption" (
+    "quiz_option_id" SERIAL NOT NULL,
+    "quiz_question_id" INTEGER NOT NULL,
+    "option_text" TEXT NOT NULL,
+    "position" INTEGER NOT NULL,
+    "is_correct" BOOLEAN NOT NULL,
 
-    CONSTRAINT "Conversation_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "QuizOption_pkey" PRIMARY KEY ("quiz_option_id")
 );
 
 -- CreateTable
-CREATE TABLE "Message" (
-    "id" TEXT NOT NULL,
-    "studentId" TEXT NOT NULL,
-    "conversationId" TEXT NOT NULL,
-    "author" "MessageAuthor" NOT NULL,
-    "content" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE "QuizAnswer" (
+    "quiz_answer_id" SERIAL NOT NULL,
+    "quiz_id" INTEGER NOT NULL,
+    "quiz_question_id" INTEGER NOT NULL,
+    "selected_option_id" INTEGER NOT NULL,
+    "is_correct" BOOLEAN NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "Message_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "QuizAnswer_pkey" PRIMARY KEY ("quiz_answer_id")
 );
 
 -- CreateTable
-CREATE TABLE "SuggestedTask" (
-    "id" TEXT NOT NULL,
-    "studentId" TEXT NOT NULL,
-    "conversationId" TEXT NOT NULL,
-    "courseId" TEXT,
-    "createdTaskId" TEXT,
-    "title" TEXT NOT NULL,
-    "notes" TEXT,
-    "dueDateKind" "DueDateKind",
-    "dueDate" DATE,
-    "dueAt" TIMESTAMP(3),
-    "state" "SuggestedTaskState" NOT NULL DEFAULT 'PENDING',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+CREATE TABLE "StudyProgress" (
+    "progress_id" SERIAL NOT NULL,
+    "student_id" INTEGER NOT NULL,
+    "completed_topics" INTEGER NOT NULL DEFAULT 0,
+    "total_quizzes" INTEGER NOT NULL DEFAULT 0,
+    "average_score" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "updated_at" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "SuggestedTask_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "StudyProgress_pkey" PRIMARY KEY ("progress_id")
 );
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Student_email_key" ON "Student"("email");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Session_tokenHash_key" ON "Session"("tokenHash");
+CREATE UNIQUE INDEX "Session_token_hash_key" ON "Session"("token_hash");
 
 -- CreateIndex
-CREATE INDEX "Session_studentId_idx" ON "Session"("studentId");
+CREATE INDEX "Session_student_id_idx" ON "Session"("student_id");
 
 -- CreateIndex
-CREATE INDEX "Session_expiresAt_idx" ON "Session"("expiresAt");
+CREATE INDEX "Session_expires_at_idx" ON "Session"("expires_at");
 
 -- CreateIndex
-CREATE INDEX "Course_studentId_idx" ON "Course"("studentId");
+CREATE INDEX "StudyQuestion_student_id_idx" ON "StudyQuestion"("student_id");
 
 -- CreateIndex
-CREATE INDEX "Course_studentId_archivedAt_idx" ON "Course"("studentId", "archivedAt");
-
--- Active Course names are unique per Student, while archived Courses do not reserve names.
-CREATE UNIQUE INDEX "Course_active_studentId_name_key" ON "Course"("studentId", "name") WHERE "archivedAt" IS NULL;
+CREATE INDEX "StudyQuestion_student_id_created_at_idx" ON "StudyQuestion"("student_id", "created_at");
 
 -- CreateIndex
-CREATE INDEX "Task_studentId_idx" ON "Task"("studentId");
+CREATE INDEX "Quiz_student_id_idx" ON "Quiz"("student_id");
 
 -- CreateIndex
-CREATE INDEX "Task_studentId_courseId_idx" ON "Task"("studentId", "courseId");
+CREATE INDEX "Quiz_student_id_state_idx" ON "Quiz"("student_id", "state");
 
 -- CreateIndex
-CREATE INDEX "Task_studentId_deletedAt_idx" ON "Task"("studentId", "deletedAt");
+CREATE INDEX "Quiz_student_id_quiz_topic_idx" ON "Quiz"("student_id", "quiz_topic");
 
 -- CreateIndex
-CREATE INDEX "Task_studentId_completedAt_idx" ON "Task"("studentId", "completedAt");
+CREATE UNIQUE INDEX "QuizQuestion_quiz_id_position_key" ON "QuizQuestion"("quiz_id", "position");
 
 -- CreateIndex
-CREATE INDEX "Task_studentId_deletedAt_completedAt_dueDate_idx" ON "Task"("studentId", "deletedAt", "completedAt", "dueDate");
+CREATE INDEX "QuizQuestion_quiz_id_idx" ON "QuizQuestion"("quiz_id");
 
 -- CreateIndex
-CREATE INDEX "Task_studentId_deletedAt_completedAt_dueAt_idx" ON "Task"("studentId", "deletedAt", "completedAt", "dueAt");
-
--- Non-deleted Task titles are unique per Student within a Course.
-CREATE UNIQUE INDEX "Task_active_studentId_courseId_title_key" ON "Task"("studentId", "courseId", "title") WHERE "deletedAt" IS NULL AND "courseId" IS NOT NULL;
-
--- Non-deleted course-less Task titles are unique per Student in their own group.
-CREATE UNIQUE INDEX "Task_active_studentId_title_no_course_key" ON "Task"("studentId", "title") WHERE "deletedAt" IS NULL AND "courseId" IS NULL;
+CREATE UNIQUE INDEX "QuizOption_quiz_question_id_position_key" ON "QuizOption"("quiz_question_id", "position");
 
 -- CreateIndex
-CREATE INDEX "TodayTask_studentId_day_idx" ON "TodayTask"("studentId", "day");
+CREATE INDEX "QuizOption_quiz_question_id_idx" ON "QuizOption"("quiz_question_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "TodayTask_studentId_taskId_day_key" ON "TodayTask"("studentId", "taskId", "day");
+CREATE UNIQUE INDEX "QuizAnswer_quiz_question_id_key" ON "QuizAnswer"("quiz_question_id");
 
 -- CreateIndex
-CREATE INDEX "Conversation_studentId_idx" ON "Conversation"("studentId");
+CREATE INDEX "QuizAnswer_quiz_id_idx" ON "QuizAnswer"("quiz_id");
 
 -- CreateIndex
-CREATE INDEX "Conversation_studentId_deletedAt_idx" ON "Conversation"("studentId", "deletedAt");
+CREATE INDEX "QuizAnswer_selected_option_id_idx" ON "QuizAnswer"("selected_option_id");
 
 -- CreateIndex
-CREATE INDEX "Conversation_studentId_deletedAt_updatedAt_idx" ON "Conversation"("studentId", "deletedAt", "updatedAt");
-
--- CreateIndex
-CREATE INDEX "Message_studentId_idx" ON "Message"("studentId");
-
--- CreateIndex
-CREATE INDEX "Message_conversationId_createdAt_idx" ON "Message"("conversationId", "createdAt");
-
--- CreateIndex
-CREATE INDEX "SuggestedTask_studentId_idx" ON "SuggestedTask"("studentId");
-
--- CreateIndex
-CREATE INDEX "SuggestedTask_conversationId_idx" ON "SuggestedTask"("conversationId");
-
--- CreateIndex
-CREATE INDEX "SuggestedTask_studentId_state_idx" ON "SuggestedTask"("studentId", "state");
-
--- CreateIndex
-CREATE INDEX "SuggestedTask_conversationId_state_idx" ON "SuggestedTask"("conversationId", "state");
+CREATE UNIQUE INDEX "StudyProgress_student_id_key" ON "StudyProgress"("student_id");
 
 -- AddForeignKey
-ALTER TABLE "Session" ADD CONSTRAINT "Session_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Session" ADD CONSTRAINT "Session_student_id_fkey" FOREIGN KEY ("student_id") REFERENCES "Student"("student_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Course" ADD CONSTRAINT "Course_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "StudyQuestion" ADD CONSTRAINT "StudyQuestion_student_id_fkey" FOREIGN KEY ("student_id") REFERENCES "Student"("student_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Task" ADD CONSTRAINT "Task_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Quiz" ADD CONSTRAINT "Quiz_student_id_fkey" FOREIGN KEY ("student_id") REFERENCES "Student"("student_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Task" ADD CONSTRAINT "Task_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "QuizQuestion" ADD CONSTRAINT "QuizQuestion_quiz_id_fkey" FOREIGN KEY ("quiz_id") REFERENCES "Quiz"("quiz_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "TodayTask" ADD CONSTRAINT "TodayTask_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "QuizOption" ADD CONSTRAINT "QuizOption_quiz_question_id_fkey" FOREIGN KEY ("quiz_question_id") REFERENCES "QuizQuestion"("quiz_question_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "TodayTask" ADD CONSTRAINT "TodayTask_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "QuizAnswer" ADD CONSTRAINT "QuizAnswer_quiz_id_fkey" FOREIGN KEY ("quiz_id") REFERENCES "Quiz"("quiz_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Conversation" ADD CONSTRAINT "Conversation_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "QuizAnswer" ADD CONSTRAINT "QuizAnswer_quiz_question_id_fkey" FOREIGN KEY ("quiz_question_id") REFERENCES "QuizQuestion"("quiz_question_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Conversation" ADD CONSTRAINT "Conversation_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "QuizAnswer" ADD CONSTRAINT "QuizAnswer_selected_option_id_fkey" FOREIGN KEY ("selected_option_id") REFERENCES "QuizOption"("quiz_option_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Message" ADD CONSTRAINT "Message_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Message" ADD CONSTRAINT "Message_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SuggestedTask" ADD CONSTRAINT "SuggestedTask_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SuggestedTask" ADD CONSTRAINT "SuggestedTask_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SuggestedTask" ADD CONSTRAINT "SuggestedTask_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SuggestedTask" ADD CONSTRAINT "SuggestedTask_createdTaskId_fkey" FOREIGN KEY ("createdTaskId") REFERENCES "Task"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "StudyProgress" ADD CONSTRAINT "StudyProgress_student_id_fkey" FOREIGN KEY ("student_id") REFERENCES "Student"("student_id") ON DELETE CASCADE ON UPDATE CASCADE;

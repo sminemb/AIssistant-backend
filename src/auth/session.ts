@@ -14,7 +14,7 @@ export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(prisma: PrismaClient, studentId: string) {
+export async function createSession(prisma: PrismaClient, studentId: number) {
   const token = newOpaqueToken();
   const expiresAt = new Date(Date.now() + sessionTtlMs);
 
@@ -74,11 +74,8 @@ export function safeEqual(left: string | undefined, right: string | undefined) {
 export function publicStudent(student: Student) {
   return {
     id: student.id,
+    name: student.name,
     email: student.email,
-    displayName: student.displayName,
-    timezone: student.timezone,
-    avatarColor: student.avatarColor,
     createdAt: student.createdAt,
-    updatedAt: student.updatedAt,
   };
 }

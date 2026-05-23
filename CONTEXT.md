@@ -1,173 +1,147 @@
 # AIssistant
 
-AIssistant is an academic study assistant for students. It helps students manage learning work and get AI-supported study help.
+AIssistant is an academic chatbot for students. It lets a Student ask study questions, generate quizzes, and track quiz-based study progress.
 
 ## Language
 
 **AIssistant**:
-The product: an academic study assistant for students.
+The product: an academic chatbot for students.
 _Avoid_: StudyAI
 
-**AI Study Assistant**:
-The assistant persona inside AIssistant that responds to study-related prompts.
-_Avoid_: AIssistant when referring only to the chat persona
+**AI Provider**:
+The external AI service behind AIssistant's chatbot answer and quiz generation behavior.
+_Avoid_: Database, frontend logic
 
 **Student**:
-The primary person using AIssistant. A Student has an account, owns their study-related data, and has a lightweight profile with display name, email, timezone, and optional avatar presentation.
+The primary person using AIssistant. A Student has a name, email, password-backed account, and owns their study questions, quizzes, and study progress.
 _Avoid_: User when discussing the domain, Teacher, Parent, Admin, Classroom
 
-**Student Day**:
-A calendar day interpreted in the Student's timezone. Today, Due Soon windows, and daily Progress use the Student Day rather than the server's timezone.
-_Avoid_: Server day, UTC day when referring to student-facing dates
+**Account**:
+The Student's login identity for AIssistant. One Student has one Account in the initial product, and the password is stored as a password hash.
+_Avoid_: Profile when referring to authentication
 
-**Course**:
-A Student's class or subject area that groups related study work. A Course is active unless archived by the Student; Courses are not deleted in the initial product. Active Course names are unique for each Student. Archiving a Course does not change or hide its Tasks, and Students may still assign Tasks to archived Courses when the archived state is clear.
-_Avoid_: Subject, Class
+**Study Question**:
+A question a Student asks the chatbot and the chatbot's saved response stored together as one study record. A Student may have many Study Questions.
+_Avoid_: Conversation, Message, Prompt
 
-**Task**:
-A study work item owned by a Student and associated with zero or one Course. A Task can represent assignment work, exam preparation, reading, practice, writing, or review. Non-deleted Task titles are unique per Student within the same Course, and course-less Tasks share their own uniqueness group. A Student may delete a Task, which removes it from future dashboard and Progress calculations.
-_Avoid_: Assignment, Study Item
+**Chatbot Response**:
+The answer produced by AIssistant for a Study Question.
+_Avoid_: Assistant Message, Completion
 
-**Suggested Task**:
-A persisted Task proposal made by the AI Study Assistant in a Conversation. A Suggested Task can be pending, confirmed, or dismissed; confirmation creates a Task and marks the Suggested Task confirmed.
-_Avoid_: Task before confirmation
+**Question History**:
+The Student's past Study Questions. Question History can be listed for the Student but is not used as chatbot context in the MVP.
+_Avoid_: Conversation context, Memory
 
-**Study Plan**:
-A set of Suggested Tasks produced by the AI Study Assistant in a Conversation. In the initial product, a Study Plan is not a separate saved object.
-_Avoid_: Planner, Schedule when referring to AI-generated task suggestions
+**Quiz**:
+A generated study assessment for a Student on a quiz topic. A Student may have many Quizzes, and a Quiz exists before it is answered.
+_Avoid_: Task, Suggested Task, Study Plan
 
-**Due Date**:
-The date or date-time by which a Task should be completed. A Due Date may be date-only or date-time.
-_Avoid_: Deadline when referring to the Task itself
+**Quiz State**:
+Whether a Quiz has been generated or completed. A generated Quiz has Quiz Questions and no Quiz Score; a completed Quiz has submitted Quiz Answers and a Quiz Score.
+_Avoid_: Task status, Completion State
 
-**Due Soon**:
-An incomplete Task that is overdue or has a Due Date within the next 14 days.
-_Avoid_: Upcoming when overdue Tasks are included
+**Quiz Question**:
+One generated multiple-choice question inside a Quiz. A Quiz Question belongs to one Quiz and has exactly four answer options plus one correct option.
+_Avoid_: Study Question when referring to generated quiz content
 
-**Today's Tasks**:
-Tasks explicitly selected by the Student for a day's focus list. A Task does not need a Due Date of today to be one of Today's Tasks, and the same Task may be selected on multiple days until completed.
-_Avoid_: Tasks due today
+**Quiz Option**:
+One selectable answer option for a Quiz Question. A Quiz Question has exactly four Quiz Options, and one of them is correct.
+_Avoid_: Answer when referring to a generated choice before the Student selects it
 
-**Completion State**:
-Whether a Task is incomplete or complete. The Student changes this state manually in the initial product.
-_Avoid_: Progress percentage when referring to a single Task
+**Quiz Review**:
+The completed Quiz view that shows the Student's selected options and which options were correct.
+_Avoid_: Generated Quiz when correctness must remain hidden
 
-**Progress**:
-Aggregate Task completion over time for a Student, optionally grouped by Course.
-_Avoid_: Mastery, Grade, Streak, Engagement
+**Quiz Answer**:
+The Student's selected Quiz Option for a Quiz Question. A Quiz Answer belongs to one Quiz Question and is used to calculate the Quiz Score.
+_Avoid_: Chatbot Response, Message
 
-**Conversation**:
-A saved exchange between a Student and the AI Study Assistant. A Conversation may be associated with zero or one Course, and may be deleted by the Student.
-_Avoid_: Chat when referring to the persisted domain object
+**Quiz Topic**:
+The subject or focus chosen by the Student before generating a Quiz.
+_Avoid_: Course unless the product later adds a Course concept
 
-**Message**:
-One utterance inside a Conversation, authored by either the Student or the AI Study Assistant. In the initial product, individual Messages are not edited or deleted.
-_Avoid_: Prompt when referring to both student and assistant entries
+**Quiz Score**:
+The percentage result of a completed Quiz, stored on the Quiz as a value from 0 to 100. Raw correct counts are derived from Quiz Answers.
+_Avoid_: Grade unless the product explicitly models school grading
 
-**Assistant Context**:
-The limited Student data made available to the AI Study Assistant when producing a reply: Courses connected to Due Soon or Today's Tasks, Due Soon Tasks, Today's Tasks, and recent Messages from the current Conversation.
-_Avoid_: Full student history, Memory
+**Study Progress**:
+The Student's stored aggregate quiz activity and performance. Study Progress belongs to one Student and summarizes distinct completed quiz topics, total quizzes, and average score from completed Quizzes.
+_Avoid_: Task progress, Completion State, Streak
+
+**Student Dashboard**:
+The Student's authenticated landing summary. It shows recent Study Questions, recent Quizzes, and Study Progress.
+_Avoid_: Task dashboard, Due Soon, Today's Tasks
 
 ## Example Dialogue
 
-Developer: "Should the dashboard header say StudyAI?"
-Domain expert: "No. AIssistant is the product name."
+Developer: "Should we model Courses and Tasks?"
+Domain expert: "No. The diagrams define Study Questions, Quizzes, and Study Progress as the core study records."
 
-Developer: "When a student opens chat, are they talking to AIssistant or the AI Study Assistant?"
-Domain expert: "They are using AIssistant, and the chat persona is the AI Study Assistant."
+Developer: "When a Student asks the chatbot something, is that a Conversation?"
+Domain expert: "No. In this product, it is a Study Question with one saved Chatbot Response."
 
-Developer: "Do we need roles for teachers or classroom admins?"
-Domain expert: "No. The first version is centered on a Student and their own study work."
+Developer: "Should the Student's question and the chatbot answer be stored separately?"
+Domain expert: "No. Store them together as one Study Question record."
 
-Developer: "Can backend data belong to an anonymous demo profile?"
-Domain expert: "No. Courses, Tasks, Conversations, and Messages belong to a real Student account."
+Developer: "Does the chatbot use previous Study Questions as context?"
+Domain expert: "No. MVP chatbot responses answer only the current Study Question."
 
-Developer: "Does AIssistant need grade level or school in the Student profile?"
-Domain expert: "No. The initial profile stays limited to identity, timezone, and optional avatar presentation."
+Developer: "Does generating a Quiz create a Task?"
+Domain expert: "No. A Quiz is its own study assessment record."
 
-Developer: "Does Today mean the server's date?"
-Domain expert: "No. Today is based on the Student Day."
+Developer: "How many Quiz Questions are generated?"
+Domain expert: "Five by default, with an optional Student-requested count capped at ten."
 
-Developer: "Should we call Biology a subject or a course?"
-Domain expert: "Course. Biology is a Course in AIssistant."
+Developer: "Does a Quiz exist before the Student answers it?"
+Domain expert: "Yes. Generating a Quiz creates the Quiz and its Quiz Questions; submitting answers completes it."
 
-Developer: "When does a Course stop appearing by default?"
-Domain expert: "When the Student archives it."
+Developer: "Does an unanswered Quiz affect Study Progress?"
+Domain expert: "No. Only completed Quizzes affect Study Progress."
 
-Developer: "Can a Student delete an old Course?"
-Domain expert: "No. In the initial product, the Student archives the Course instead."
+Developer: "Can a completed Quiz be answered again?"
+Domain expert: "No. Completed Quizzes are immutable; the Student generates another Quiz for another attempt."
 
-Developer: "Can a Student have two active Biology Courses?"
-Domain expert: "No. Active Course names are unique for each Student."
+Developer: "Can a Student submit a partially answered Quiz?"
+Domain expert: "No. Quiz submission requires one selected Quiz Option for every Quiz Question."
 
-Developer: "Does archiving Biology hide its incomplete Tasks?"
-Domain expert: "No. Archiving a Course does not change or hide its Tasks."
+Developer: "Can a Student have many Quizzes?"
+Domain expert: "Yes. Each Quiz belongs to one Student."
 
-Developer: "Can a Student assign a Task to an archived Course?"
-Domain expert: "Yes, if the archived Course is clearly labeled or separated."
+Developer: "Should the Student record store the password from the diagram?"
+Domain expert: "Only conceptually. The backend stores a password hash, not the plaintext password."
 
-Developer: "Is Essay Draft a deadline?"
-Domain expert: "No. Essay Draft is a Task. Tomorrow at 11:59 PM is its Due Date."
+Developer: "Can a Student generate more than one Quiz for the same Quiz Topic?"
+Domain expert: "Yes. Retakes are allowed and each completed Quiz contributes to total quizzes and average score."
 
-Developer: "Does every Due Date need an exact time?"
-Domain expert: "No. A Due Date may be date-only or date-time."
+Developer: "Should we only save the Quiz score?"
+Domain expert: "No. Save generated Quiz Questions and the Student's Quiz Answers so the Quiz can be reviewed and scored."
 
-Developer: "Should an overdue incomplete Task disappear from priority views?"
-Domain expert: "No. It is still Due Soon until the Student completes it."
+Developer: "Can Quiz Questions be free-text answers?"
+Domain expert: "No. MVP Quiz Questions are multiple-choice only."
 
-Developer: "Are Today's Tasks just Tasks due today?"
-Domain expert: "No. The Student explicitly chooses Today's Tasks for the day."
+Developer: "How many options does each Quiz Question have?"
+Domain expert: "Exactly four options, with one correct option."
 
-Developer: "Does selecting a Task for today count as Progress?"
-Domain expert: "No. Progress counts completed Tasks, not daily selection."
+Developer: "Are Quiz Options stored as JSON on the Quiz Question?"
+Domain expert: "No. Quiz Options are separate records so a Student's Quiz Answer can reference the selected option."
 
-Developer: "Does every Task need a Course?"
-Domain expert: "No. A Task can be general study work without belonging to a Course."
+Developer: "Can the frontend see which Quiz Option is correct before submitting?"
+Domain expert: "No. Correctness is hidden until the Quiz is completed and shown in Quiz Review."
 
-Developer: "Does a deleted Task still count toward Progress?"
-Domain expert: "No. Deleted Tasks are removed from future dashboard and Progress calculations."
+Developer: "Does Study Progress come from completed Tasks?"
+Domain expert: "No. Study Progress summarizes quiz activity and quiz scores."
 
-Developer: "Can a Student create two Biology Tasks named Read Chapter 4?"
-Domain expert: "No. Task titles are unique per Student within the same Course."
+Developer: "Is Study Progress recalculated from Quizzes every time?"
+Domain expert: "No. One Study Progress record is stored for each Student and updated when a Quiz is completed."
 
-Developer: "Can a deleted Task title be reused?"
-Domain expert: "Yes. Deleted Tasks do not reserve their titles."
+Developer: "What does completed topics count?"
+Domain expert: "It counts distinct Quiz Topics with at least one completed Quiz."
 
-Developer: "Does AIssistant complete Tasks automatically after a chat?"
-Domain expert: "No. A Student manually marks each Task complete or incomplete."
+Developer: "What appears on the Student Dashboard?"
+Domain expert: "Recent Study Questions, recent Quizzes, and Study Progress."
 
-Developer: "Can the AI Study Assistant create Tasks directly?"
-Domain expert: "No. It can propose Suggested Tasks, and the Student confirms which ones become Tasks."
+Developer: "Should we call the quiz subject a Course?"
+Domain expert: "No. Use Quiz Topic unless a separate Course concept is added later."
 
-Developer: "Should we save Study Plans as their own records?"
-Domain expert: "No. A Study Plan is assistant output made of Suggested Tasks; confirmed items become normal Tasks."
-
-Developer: "If the page refreshes, should Suggested Tasks disappear?"
-Domain expert: "No. Pending Suggested Tasks are tied to the Conversation until confirmed or dismissed."
-
-Developer: "What happens when a Student confirms a Suggested Task?"
-Domain expert: "AIssistant creates a Task and marks the Suggested Task confirmed."
-
-Developer: "Can the Student reject a Suggested Task?"
-Domain expert: "Yes. The Student can dismiss it so it is no longer pending."
-
-Developer: "Does asking the assistant a Biology question increase Biology Progress?"
-Domain expert: "No. Progress comes from completed Tasks over time."
-
-Developer: "Is chat history temporary?"
-Domain expert: "No. A Student has saved Conversations made of Messages."
-
-Developer: "Does every Conversation need a Course?"
-Domain expert: "No. A Conversation can be general study help or attached to one Course."
-
-Developer: "Can a deleted Conversation still inform assistant replies?"
-Domain expert: "No. Deleted Conversations are excluded from chat history and Assistant Context."
-
-Developer: "Can a Student delete one Message from a Conversation?"
-Domain expert: "No. The Student can delete the Conversation, not individual Messages."
-
-Developer: "Can the AI Study Assistant see all of a Student's history?"
-Domain expert: "No. It receives limited Assistant Context for the current reply."
-
-Developer: "Can Assistant Context include an archived Course?"
-Domain expert: "Yes, when that Course has Due Soon or Today's Tasks."
+Developer: "Who creates chatbot responses and Quiz Questions?"
+Domain expert: "The AI Provider creates them behind the backend provider boundary."
