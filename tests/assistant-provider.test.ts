@@ -31,4 +31,15 @@ describe("assistant provider", () => {
       correctOptionIndex: 0,
     });
   });
+
+  it("fails AI operations in production when provider configuration is missing", async () => {
+    const provider = createAssistantProvider({ ...env, NODE_ENV: "production" });
+
+    await expect(provider.answerStudyQuestion("What is gravity?")).rejects.toMatchObject({
+      code: "ASSISTANT_PROVIDER_NOT_CONFIGURED",
+    });
+    await expect(provider.generateQuiz("Physics", 5)).rejects.toMatchObject({
+      code: "ASSISTANT_PROVIDER_NOT_CONFIGURED",
+    });
+  });
 });

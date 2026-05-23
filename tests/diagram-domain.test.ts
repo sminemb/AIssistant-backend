@@ -163,8 +163,10 @@ const prismaMock = vi.hoisted(() => ({
     updateMany: vi.fn(async () => ({ count: 0 })),
   },
   studyQuestion: {
-    findMany: vi.fn(async ({ where }: { where: { studentId: number } }) =>
-      orderDescByCreatedAt(store.studyQuestions.filter((question) => question.studentId === where.studentId)),
+    findMany: vi.fn(async ({ where, take }: { where: { studentId: number }; take?: number }) => {
+      const ordered = orderDescByCreatedAt(store.studyQuestions.filter((question) => question.studentId === where.studentId));
+      return take ? ordered.slice(0, take) : ordered;
+    },
     ),
     create: vi.fn(async ({ data }: { data: { studentId: number; questionText: string; chatbotResponse: string } }) => {
       const studyQuestion = { id: nextId(), ...data, createdAt: new Date() };
@@ -291,6 +293,31 @@ describe("diagram-domain HTTP contract", () => {
     await app.close();
   });
 
+  it("logs in and recovers the Student session without exposing the password hash", async () => {
+    const { app } = await registerStudent();
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "ADA@example.com", password: "correct horse battery staple" },
+    });
+    const loginBody = JSON.parse(login.body);
+    const me = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { cookie: cookieHeader(rawCookies(login.cookies)) },
+    });
+    const meBody = JSON.parse(me.body);
+
+    expect(login.statusCode).toBe(200);
+    expect(loginBody.student).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
+    expect(loginBody.student).not.toHaveProperty("passwordHash");
+    expect(me.statusCode).toBe(200);
+    expect(meBody.student).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
+
+    await app.close();
+  });
+
   it("persists a Study Question with its Chatbot Response", async () => {
     const { app, cookies, csrfToken } = await registerStudent();
 
@@ -329,6 +356,30 @@ describe("diagram-domain HTTP contract", () => {
     await app.close();
   });
 
+  it("generates five Quiz Questions by default and rejects counts above ten", async () => {
+    const { app, cookies, csrfToken } = await registerStudent();
+
+    const defaultQuiz = await app.inject({
+      method: "POST",
+      url: "/quizzes",
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { quizTopic: "Biology" },
+    });
+    const tooMany = await app.inject({
+      method: "POST",
+      url: "/quizzes",
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { quizTopic: "Biology", questionCount: 11 },
+    });
+
+    expect(defaultQuiz.statusCode).toBe(201);
+    expect(JSON.parse(defaultQuiz.body).quiz.questions).toHaveLength(5);
+    expect(tooMany.statusCode).toBe(400);
+    expect(JSON.parse(tooMany.body).error.code).toBe("VALIDATION_FAILED");
+
+    await app.close();
+  });
+
   it("submits a full Quiz, returns review data, and updates Study Progress", async () => {
     const { app, cookies, csrfToken } = await registerStudent();
     const generated = await app.inject({
@@ -356,6 +407,119 @@ describe("diagram-domain HTTP contract", () => {
     expect(body.quiz.score).toBe(50);
     expect(body.quiz.questions[0].options[0]).toHaveProperty("isCorrect");
     expect(body.studyProgress).toMatchObject({ completedTopics: 1, totalQuizzes: 1, averageScore: 50 });
+
+    await app.close();
+  });
+
+  it("rejects incomplete, invalid, and repeated Quiz submissions", async () => {
+    const { app, cookies, csrfToken } = await registerStudent();
+    const generated = await app.inject({
+      method: "POST",
+      url: "/quizzes",
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { quizTopic: "Algebra", questionCount: 2 },
+    });
+    const quiz = JSON.parse(generated.body).quiz;
+    const fullAnswers = quiz.questions.map((question: { id: number; options: Array<{ id: number }> }) => ({
+      quizQuestionId: question.id,
+      selectedOptionId: question.options[0].id,
+    }));
+
+    const incomplete = await app.inject({
+      method: "POST",
+      url: `/quizzes/${quiz.id}/submit`,
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { answers: [fullAnswers[0]] },
+    });
+    const invalid = await app.inject({
+      method: "POST",
+      url: `/quizzes/${quiz.id}/submit`,
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { answers: [{ ...fullAnswers[0], selectedOptionId: quiz.questions[1].options[0].id }, fullAnswers[1]] },
+    });
+    const completed = await app.inject({
+      method: "POST",
+      url: `/quizzes/${quiz.id}/submit`,
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { answers: fullAnswers },
+    });
+    const repeated = await app.inject({
+      method: "POST",
+      url: `/quizzes/${quiz.id}/submit`,
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { answers: fullAnswers },
+    });
+
+    expect(JSON.parse(incomplete.body).error.code).toBe("QUIZ_INCOMPLETE");
+    expect(JSON.parse(invalid.body).error.code).toBe("QUIZ_OPTION_INVALID");
+    expect(completed.statusCode).toBe(200);
+    expect(JSON.parse(repeated.body).error.code).toBe("QUIZ_ALREADY_COMPLETED");
+
+    await app.close();
+  });
+
+  it("counts repeated Quiz Topics once in Study Progress while averaging all completed Quizzes", async () => {
+    const { app, cookies, csrfToken } = await registerStudent();
+
+    async function completeQuiz(quizTopic: string, selectedOptionIndex: number) {
+      const generated = await app.inject({
+        method: "POST",
+        url: "/quizzes",
+        headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+        payload: { quizTopic, questionCount: 2 },
+      });
+      const quiz = JSON.parse(generated.body).quiz;
+      const answers = quiz.questions.map((question: { id: number; options: Array<{ id: number }> }) => ({
+        quizQuestionId: question.id,
+        selectedOptionId: question.options[selectedOptionIndex].id,
+      }));
+      const submitted = await app.inject({
+        method: "POST",
+        url: `/quizzes/${quiz.id}/submit`,
+        headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+        payload: { answers },
+      });
+
+      return JSON.parse(submitted.body).studyProgress;
+    }
+
+    await completeQuiz("Algebra", 0);
+    const afterRetake = await completeQuiz("Algebra", 1);
+    const afterNewTopic = await completeQuiz("Biology", 2);
+
+    expect(afterRetake).toMatchObject({ completedTopics: 1, totalQuizzes: 2, averageScore: 50 });
+    expect(afterNewTopic).toMatchObject({ completedTopics: 2, totalQuizzes: 3 });
+    expect(afterNewTopic.averageScore).toBeCloseTo(33.333, 3);
+
+    await app.close();
+  });
+
+  it("returns recent Study Questions, recent Quizzes, and Study Progress from the Student Dashboard", async () => {
+    const { app, cookies, csrfToken } = await registerStudent();
+
+    await app.inject({
+      method: "POST",
+      url: "/study-questions",
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { questionText: "What is mitosis?" },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/quizzes",
+      headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
+      payload: { quizTopic: "Biology", questionCount: 1 },
+    });
+    const dashboard = await app.inject({
+      method: "GET",
+      url: "/dashboard/summary",
+      headers: { cookie: cookieHeader(cookies) },
+    });
+    const body = JSON.parse(dashboard.body);
+
+    expect(dashboard.statusCode).toBe(200);
+    expect(body.recentStudyQuestions[0]).toMatchObject({ questionText: "What is mitosis?" });
+    expect(body.recentQuizzes[0]).toMatchObject({ quizTopic: "Biology", state: "GENERATED" });
+    expect(body.studyProgress).toMatchObject({ completedTopics: 0, totalQuizzes: 0, averageScore: 0 });
 
     await app.close();
   });
