@@ -22,4 +22,19 @@ describe("diagram-domain documentation", () => {
     expect(diagrams).toContain("StudyProgress");
     expect(diagrams).not.toContain("TodayTask");
   });
+
+  it("keeps frontend-facing docs on the diagram-domain contract", () => {
+    const frontendGuide = readFileSync("docs/frontend-integration.md", "utf8");
+    const handoff = readFileSync("FRONTEND_HANDOFF.md", "utf8");
+    const readme = readFileSync("README.md", "utf8");
+    const combined = `${frontendGuide}\n${handoff}\n${readme}`;
+
+    expect(combined).toContain("/study-questions");
+    expect(combined).toContain("/quizzes");
+    expect(combined).toContain("/study-progress");
+    expect(combined).not.toContain("/tasks");
+    expect(combined).not.toContain("/courses");
+    expect(combined).not.toContain("/conversations");
+    expect(combined).not.toContain("/today-tasks");
+  });
 });
