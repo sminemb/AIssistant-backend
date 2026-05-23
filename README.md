@@ -50,8 +50,8 @@ PORT=4000
 NODE_ENV=development
 SESSION_SECRET="replace-with-a-long-random-secret"
 FRONTEND_ORIGINS="http://localhost:3000"
-ANTHROPIC_API_KEY=""
-ANTHROPIC_MODEL=""
+GEMINI_API_KEY=""
+GEMINI_MODEL=""
 ```
 
 `SESSION_SECRET` must be at least 32 characters. In production, `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` must be set before Study Question answering or Quiz generation can succeed.
