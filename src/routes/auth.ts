@@ -35,6 +35,11 @@ function setSessionCookie(app: FastifyInstance, token: string, expiresAt: Date) 
   };
 }
 
+function authUserPayload(user: Parameters<typeof publicUser>[0]) {
+  const dto = publicUser(user);
+  return { user: dto, student: dto };
+}
+
 export async function authRoutes(app: FastifyInstance) {
   app.get("/auth/csrf", async (request, reply) => {
     const csrfToken = await app.issueCsrfToken(request, reply);
@@ -62,7 +67,7 @@ export async function authRoutes(app: FastifyInstance) {
     await app.issueCsrfToken(request, reply);
 
     reply.setCookie(sessionCookieName, session.token, setSessionCookie(app, session.token, session.expiresAt));
-    return reply.status(201).send({ user: publicUser(user) });
+    return reply.status(201).send(authUserPayload(user));
   });
 
   app.post("/auth/login", async (request, reply) => {
@@ -81,7 +86,7 @@ export async function authRoutes(app: FastifyInstance) {
     await app.issueCsrfToken(request, reply);
 
     reply.setCookie(sessionCookieName, session.token, setSessionCookie(app, session.token, session.expiresAt));
-    return { user: publicUser(user) };
+    return authUserPayload(user);
   });
 
   app.post("/auth/logout", async (request, reply) => {
@@ -93,6 +98,6 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.get("/auth/me", async (request) => {
     const user = await app.requireUser(request);
-    return { user: publicUser(user) };
+    return authUserPayload(user);
   });
 }
