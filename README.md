@@ -18,6 +18,14 @@ REST JSON backend for AIssistant, an academic chatbot for students powered by Go
 
 ---
 
+## Security
+- **Rate-Limiting**: Global (100 req/min) and Authentication-specific (5 req/min) limits enabled via `@fastify/rate-limit`.
+- **Input Validation**: Strict schema enforcement using `Zod` on all API endpoints.
+- **CSRF Protection**: Token-based protection for all unsafe HTTP methods.
+- **CORS**: Restricted origins with explicit header and method handling.
+
+---
+
 # Setup
 Clone the repository: 
 ```bash
