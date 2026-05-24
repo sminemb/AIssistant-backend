@@ -99,7 +99,7 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.patch("/admin/users/:userId/role", async (request) => {
-    await app.requireAdmin(request);
+    const currentAdmin = await app.requireAdmin(request);
 
     const paramsSchema = z.object({
       userId: z.string().transform(Number),
@@ -116,15 +116,15 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new HttpError(404, "USER_NOT_FOUND", "User not found");
     }
 
-    if (user.id === request.session.userId && newRole === "STUDENT") {
-      throw new HttpError(403, "CANNOT_DEMOTE_SELF", "You cannot demote yourself.");
-    }
-
     if (newRole === "STUDENT") {
       const adminCount = await prisma.user.count({ where: { role: "ADMIN" } });
       if (adminCount <= 1) {
         throw new HttpError(403, "CANNOT_DEMOTE_LAST_ADMIN", "Cannot demote the last administrator.");
       }
+    }
+
+    if (user.id === currentAdmin.id && newRole === "STUDENT") {
+      throw new HttpError(403, "CANNOT_DEMOTE_SELF", "You cannot demote yourself.");
     }
     
     const updatedUser = await prisma.user.update({
@@ -136,7 +136,7 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.delete("/admin/users/:userId", async (request) => {
-    await app.requireAdmin(request);
+    const currentAdmin = await app.requireAdmin(request);
 
     const paramsSchema = z.object({
       userId: z.string().transform(Number),
@@ -148,15 +148,15 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new HttpError(404, "USER_NOT_FOUND", "User not found");
     }
 
-    if (userToDelete.id === request.session.userId) {
-      throw new HttpError(403, "CANNOT_DELETE_SELF", "You cannot delete your own account.");
-    }
-
     if (userToDelete.role === "ADMIN") {
       const adminCount = await prisma.user.count({ where: { role: "ADMIN" } });
       if (adminCount <= 1) {
         throw new HttpError(403, "CANNOT_DELETE_LAST_ADMIN", "Cannot delete the last administrator.");
       }
+    }
+
+    if (userToDelete.id === currentAdmin.id) {
+      throw new HttpError(403, "CANNOT_DELETE_SELF", "You cannot delete your own account.");
     }
 
     await prisma.user.delete({ where: { id: userId } });

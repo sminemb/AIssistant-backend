@@ -22,6 +22,7 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase()),
   password: z.string().min(1),
+  role: z.enum(["STUDENT", "ADMIN"]).optional(),
 });
 
 function setSessionCookie(app: FastifyInstance, token: string, expiresAt: Date) {
