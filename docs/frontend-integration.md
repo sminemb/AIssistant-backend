@@ -14,7 +14,7 @@ Use `GET /auth/csrf` to receive a CSRF token and send it as `X-CSRF-Token` for u
 - `POST /auth/logout`
 - `GET /auth/me`
 
-Register and login responses return `{ user }`. User payloads include `id`, `name`, `email`, `role`, and `createdAt`; they never include `passwordHash`.
+Register and login responses return `{ user, student }` for frontend compatibility. Both fields contain the same safe user payload: `id`, `name`, `email`, `role`, and `createdAt`; they never include `passwordHash`.
 
 ## Student Dashboard
 
