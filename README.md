@@ -157,7 +157,7 @@ Auth and ownership failures use stable codes such as:
 
 - Browser clients must use `credentials: "include"`.
 - Fetch `GET /auth/csrf` and send the returned token in `X-CSRF-Token` for unsafe methods.
-- `POST /auth/register` and `POST /auth/login` issue the session cookie and return `{ user }`.
+- `POST /auth/register` and `POST /auth/login` issue the session cookie and return `{ user, student }`.
 - User responses never include `passwordHash`.
 
 ---
