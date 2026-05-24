@@ -5,7 +5,7 @@ import { z } from "zod";
 import {
   createSession,
   csrfCookieName,
-  publicStudent,
+  publicUser,
   revokeSession,
   sessionCookieName,
 } from "../auth/session.js";
@@ -42,14 +42,14 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.post("/auth/register", async (request, reply) => {
     const body = parseBody(request, registerSchema);
-    const existing = await prisma.student.findUnique({ where: { email: body.email } });
+    const existing = await prisma.user.findUnique({ where: { email: body.email } });
 
     if (existing) {
-      throw new HttpError(409, "EMAIL_ALREADY_REGISTERED", "A Student with this email already exists");
+      throw new HttpError(409, "EMAIL_ALREADY_REGISTERED", "A user with this email already exists");
     }
 
     const passwordHash = await bcrypt.hash(body.password, 12);
-    const student = await prisma.student.create({
+    const user = await prisma.user.create({
       data: {
         email: body.email,
         passwordHash,
@@ -57,26 +57,30 @@ export async function authRoutes(app: FastifyInstance) {
         studyProgress: { create: {} },
       },
     });
-    const session = await createSession(prisma, student.id);
+    const session = await createSession(prisma, user.id);
     await app.issueCsrfToken(request, reply);
 
     reply.setCookie(sessionCookieName, session.token, setSessionCookie(app, session.token, session.expiresAt));
-    return reply.status(201).send({ student: publicStudent(student) });
+    return reply.status(201).send({ user: publicUser(user) });
   });
 
   app.post("/auth/login", async (request, reply) => {
     const body = parseBody(request, loginSchema);
-    const student = await prisma.student.findUnique({ where: { email: body.email } });
+    const user = await prisma.user.findUnique({ where: { email: body.email } });
 
-    if (!student || !(await bcrypt.compare(body.password, student.passwordHash))) {
+    if (!user || !(await bcrypt.compare(body.password, user.passwordHash))) {
       throw new HttpError(401, "INVALID_CREDENTIALS", "Email or password is incorrect");
     }
 
-    const session = await createSession(prisma, student.id);
+    if (body.role && user.role !== body.role) {
+      throw new HttpError(403, "ACCESS_DENIED", `Access denied. ${body.role} privileges required.`);
+    }
+
+    const session = await createSession(prisma, user.id);
     await app.issueCsrfToken(request, reply);
 
     reply.setCookie(sessionCookieName, session.token, setSessionCookie(app, session.token, session.expiresAt));
-    return { student: publicStudent(student) };
+    return { user: publicUser(user) };
   });
 
   app.post("/auth/logout", async (request, reply) => {
@@ -87,7 +91,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.get("/auth/me", async (request) => {
-    const student = await app.requireStudent(request);
-    return { student: publicStudent(student) };
+    const user = await app.requireUser(request);
+    return { user: publicUser(user) };
   });
 }

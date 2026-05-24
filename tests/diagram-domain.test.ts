@@ -1,16 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-type StudentRecord = {
+type UserRecord = {
   id: number;
   name: string;
   email: string;
   passwordHash: string;
+  role: "STUDENT" | "ADMIN";
   createdAt: Date;
 };
 
 type SessionRecord = {
   id: number;
-  studentId: number;
+  userId: number;
   tokenHash: string;
   expiresAt: Date;
   revokedAt: Date | null;
@@ -19,7 +20,7 @@ type SessionRecord = {
 
 type StudyQuestionRecord = {
   id: number;
-  studentId: number;
+  userId: number;
   questionText: string;
   chatbotResponse: string;
   createdAt: Date;
@@ -27,7 +28,7 @@ type StudyQuestionRecord = {
 
 type QuizRecord = {
   id: number;
-  studentId: number;
+  userId: number;
   quizTopic: string;
   score: number | null;
   state: "GENERATED" | "COMPLETED";
@@ -61,7 +62,7 @@ type QuizAnswerRecord = {
 
 type StudyProgressRecord = {
   id: number;
-  studentId: number;
+  userId: number;
   completedTopics: number;
   totalQuizzes: number;
   averageScore: number;
@@ -70,7 +71,7 @@ type StudyProgressRecord = {
 
 const store = vi.hoisted(() => ({
   nextId: 1,
-  students: [] as StudentRecord[],
+  users: [] as UserRecord[],
   sessions: [] as SessionRecord[],
   studyQuestions: [] as StudyQuestionRecord[],
   quizzes: [] as QuizRecord[],
@@ -102,16 +103,16 @@ function includeQuiz(quiz: QuizRecord) {
   };
 }
 
-function updateProgress(studentId: number) {
-  const completed = store.quizzes.filter((quiz) => quiz.studentId === studentId && quiz.state === "COMPLETED");
+function updateProgress(userId: number) {
+  const completed = store.quizzes.filter((quiz) => quiz.userId === userId && quiz.state === "COMPLETED");
   const completedTopics = new Set(completed.map((quiz) => quiz.quizTopic.toLowerCase())).size;
   const totalQuizzes = completed.length;
   const averageScore =
     totalQuizzes === 0 ? 0 : completed.reduce((total, quiz) => total + (quiz.score ?? 0), 0) / totalQuizzes;
-  let progress = store.studyProgress.find((candidate) => candidate.studentId === studentId);
+  let progress = store.studyProgress.find((candidate) => candidate.userId === userId);
 
   if (!progress) {
-    progress = { id: nextId(), studentId, completedTopics, totalQuizzes, averageScore, updatedAt: new Date() };
+    progress = { id: nextId(), userId, completedTopics, totalQuizzes, averageScore, updatedAt: new Date() };
     store.studyProgress.push(progress);
   } else {
     progress.completedTopics = completedTopics;
@@ -124,70 +125,71 @@ function updateProgress(studentId: number) {
 }
 
 const prismaMock = vi.hoisted(() => ({
-  student: {
+  user: {
     findUnique: vi.fn(async ({ where }: { where: { email?: string } }) =>
-      where.email ? store.students.find((student) => student.email === where.email) ?? null : null,
+      where.email ? store.users.find((user) => user.email === where.email) ?? null : null,
     ),
-    create: vi.fn(async ({ data }: { data: { email: string; passwordHash: string; name: string; studyProgress?: unknown } }) => {
-      const student = {
+    create: vi.fn(async ({ data }: { data: { email: string; passwordHash: string; name: string; role?: "STUDENT" | "ADMIN"; studyProgress?: unknown } }) => {
+      const user = {
         id: nextId(),
         email: data.email,
         passwordHash: data.passwordHash,
         name: data.name,
+        role: data.role ?? "STUDENT",
         createdAt: new Date(),
       };
-      store.students.push(student);
+      store.users.push(user);
       if (data.studyProgress) {
         store.studyProgress.push({
           id: nextId(),
-          studentId: student.id,
+          userId: user.id,
           completedTopics: 0,
           totalQuizzes: 0,
           averageScore: 0,
           updatedAt: new Date(),
         });
       }
-      return student;
+      return user;
     }),
   },
   session: {
-    create: vi.fn(async ({ data }: { data: { studentId: number; tokenHash: string; expiresAt: Date } }) => {
-      const session = { id: nextId(), studentId: data.studentId, tokenHash: data.tokenHash, expiresAt: data.expiresAt, revokedAt: null, createdAt: new Date() };
+    create: vi.fn(async ({ data }: { data: { userId: number; tokenHash: string; expiresAt: Date } }) => {
+      const session = { id: nextId(), userId: data.userId, tokenHash: data.tokenHash, expiresAt: data.expiresAt, revokedAt: null, createdAt: new Date() };
       store.sessions.push(session);
       return session;
     }),
-    findUnique: vi.fn(async ({ where }: { where: { tokenHash: string }; include?: { student?: boolean } }) => {
+    findUnique: vi.fn(async ({ where }: { where: { tokenHash: string }; include?: { user?: boolean } }) => {
       const session = store.sessions.find((candidate) => candidate.tokenHash === where.tokenHash);
-      return session ? { ...session, student: store.students.find((student) => student.id === session.studentId) ?? null } : null;
+      return session ? { ...session, user: store.users.find((user) => user.id === session.userId) ?? null } : null;
     }),
     updateMany: vi.fn(async () => ({ count: 0 })),
   },
   studyQuestion: {
-    findMany: vi.fn(async ({ where, take }: { where: { studentId: number }; take?: number }) => {
-      const ordered = orderDescByCreatedAt(store.studyQuestions.filter((question) => question.studentId === where.studentId));
+    findMany: vi.fn(async ({ where, take }: { where: { userId: number }; take?: number }) => {
+      const ordered = orderDescByCreatedAt(store.studyQuestions.filter((question) => question.userId === where.userId));
       return take ? ordered.slice(0, take) : ordered;
     },
     ),
-    create: vi.fn(async ({ data }: { data: { studentId: number; questionText: string; chatbotResponse: string } }) => {
+    create: vi.fn(async ({ data }: { data: { userId: number; questionText: string; chatbotResponse: string } }) => {
       const studyQuestion = { id: nextId(), ...data, createdAt: new Date() };
       store.studyQuestions.push(studyQuestion);
       return studyQuestion;
     }),
   },
   quiz: {
-    findMany: vi.fn(async ({ where, take }: { where: { studentId: number; state?: "COMPLETED"; score?: { not: null } }; take?: number }) => {
-      let quizzes = store.quizzes.filter((quiz) => quiz.studentId === where.studentId);
+    findMany: vi.fn(async ({ where, take }: { where: { userId: number; state?: "COMPLETED"; score?: { not: null } }; take?: number }) => {
+      let quizzes = store.quizzes.filter((quiz) => quiz.userId === where.userId);
       if (where.state) quizzes = quizzes.filter((quiz) => quiz.state === where.state);
       if (where.score) quizzes = quizzes.filter((quiz) => quiz.score !== null);
       const ordered = orderDescByCreatedAt(quizzes);
       return take ? ordered.slice(0, take) : ordered;
     }),
-    findFirst: vi.fn(async ({ where }: { where: { id: number; studentId: number } }) => {
-      const quiz = store.quizzes.find((candidate) => candidate.id === where.id && candidate.studentId === where.studentId);
+    findFirst: vi.fn(async ({ where }: { where: { id: number; userId: number } }) => {
+      const quiz = store.quizzes.find((candidate) => candidate.id === where.id && candidate.userId === where.userId);
       return quiz ? includeQuiz(quiz) : null;
     }),
-    create: vi.fn(async ({ data }: { data: { studentId: number; quizTopic: string; questions: { create: Array<{ questionText: string; position: number; options: { create: Array<{ optionText: string; position: number; isCorrect: boolean }> } }> } } }) => {
-      const quiz = { id: nextId(), studentId: data.studentId, quizTopic: data.quizTopic, score: null, state: "GENERATED" as const, createdAt: new Date(), updatedAt: new Date() };
+    create: vi.fn(async ({ data }: { data: { userId: number; quizTopic: string; questions: { create: Array<{ questionText: string; position: number; options: { create: Array<{ optionText: string; position: number; isCorrect: boolean }> } }> } } }) => {
+      const quiz = { id: nextId(), userId: data.userId, quizTopic: data.quizTopic, score: null, state: "GENERATED" as const, createdAt: new Date(), updatedAt: new Date() };
       store.quizzes.push(quiz);
       for (const questionData of data.questions.create) {
         const question = { id: nextId(), quizId: quiz.id, questionText: questionData.questionText, position: questionData.position };
@@ -215,8 +217,8 @@ const prismaMock = vi.hoisted(() => ({
     }),
   },
   studyProgress: {
-    upsert: vi.fn(async ({ where, update, create }: { where: { studentId: number }; update?: Partial<StudyProgressRecord>; create: Partial<StudyProgressRecord> & { studentId: number } }) => {
-      const existing = store.studyProgress.find((progress) => progress.studentId === where.studentId);
+    upsert: vi.fn(async ({ where, update, create }: { where: { userId: number }; update?: Partial<StudyProgressRecord>; create: Partial<StudyProgressRecord> & { userId: number } }) => {
+      const existing = store.studyProgress.find((progress) => progress.userId === where.userId);
       if (existing) {
         if (update && Object.keys(update).length > 0) {
           Object.assign(existing, update, { updatedAt: new Date() });
@@ -252,7 +254,7 @@ function rawCookies(cookies: Array<{ name: string; value: string }>) {
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`);
 }
 
-async function registerStudent() {
+async function registerUser() {
   const app = await buildServer(env);
   const register = await app.inject({
     method: "POST",
@@ -269,7 +271,7 @@ async function registerStudent() {
 describe("diagram-domain HTTP contract", () => {
   beforeEach(() => {
     store.nextId = 1;
-    store.students = [];
+    store.users = [];
     store.sessions = [];
     store.studyQuestions = [];
     store.quizzes = [];
@@ -284,17 +286,17 @@ describe("diagram-domain HTTP contract", () => {
     vi.restoreAllMocks();
   });
 
-  it("registers a Student with name/email and creates empty Study Progress", async () => {
-    const { app } = await registerStudent();
+  it("registers a User with name/email and creates empty Study Progress", async () => {
+    const { app } = await registerUser();
 
-    expect(store.students[0]).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
+    expect(store.users[0]).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
     expect(store.studyProgress[0]).toMatchObject({ completedTopics: 0, totalQuizzes: 0, averageScore: 0 });
 
     await app.close();
   });
 
-  it("logs in and recovers the Student session without exposing the password hash", async () => {
-    const { app } = await registerStudent();
+  it("logs in and recovers the User session without exposing the password hash", async () => {
+    const { app } = await registerUser();
 
     const login = await app.inject({
       method: "POST",
@@ -310,16 +312,16 @@ describe("diagram-domain HTTP contract", () => {
     const meBody = JSON.parse(me.body);
 
     expect(login.statusCode).toBe(200);
-    expect(loginBody.student).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
-    expect(loginBody.student).not.toHaveProperty("passwordHash");
+    expect(loginBody.user).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
+    expect(loginBody.user).not.toHaveProperty("passwordHash");
     expect(me.statusCode).toBe(200);
-    expect(meBody.student).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
+    expect(meBody.user).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
 
     await app.close();
   });
 
   it("persists a Study Question with its Chatbot Response", async () => {
-    const { app, cookies, csrfToken } = await registerStudent();
+    const { app, cookies, csrfToken } = await registerUser();
 
     const response = await app.inject({
       method: "POST",
@@ -338,7 +340,7 @@ describe("diagram-domain HTTP contract", () => {
   });
 
   it("generates a Quiz without exposing correct options before submission", async () => {
-    const { app, cookies, csrfToken } = await registerStudent();
+    const { app, cookies, csrfToken } = await registerUser();
 
     const response = await app.inject({
       method: "POST",
@@ -357,7 +359,7 @@ describe("diagram-domain HTTP contract", () => {
   });
 
   it("generates five Quiz Questions by default and rejects counts above ten", async () => {
-    const { app, cookies, csrfToken } = await registerStudent();
+    const { app, cookies, csrfToken } = await registerUser();
 
     const defaultQuiz = await app.inject({
       method: "POST",
@@ -381,7 +383,7 @@ describe("diagram-domain HTTP contract", () => {
   });
 
   it("submits a full Quiz, returns review data, and updates Study Progress", async () => {
-    const { app, cookies, csrfToken } = await registerStudent();
+    const { app, cookies, csrfToken } = await registerUser();
     const generated = await app.inject({
       method: "POST",
       url: "/quizzes",
@@ -412,7 +414,7 @@ describe("diagram-domain HTTP contract", () => {
   });
 
   it("rejects incomplete, invalid, and repeated Quiz submissions", async () => {
-    const { app, cookies, csrfToken } = await registerStudent();
+    const { app, cookies, csrfToken } = await registerUser();
     const generated = await app.inject({
       method: "POST",
       url: "/quizzes",
@@ -459,7 +461,7 @@ describe("diagram-domain HTTP contract", () => {
   });
 
   it("counts repeated Quiz Topics once in Study Progress while averaging all completed Quizzes", async () => {
-    const { app, cookies, csrfToken } = await registerStudent();
+    const { app, cookies, csrfToken } = await registerUser();
 
     async function completeQuiz(quizTopic: string, selectedOptionIndex: number) {
       const generated = await app.inject({
@@ -495,7 +497,7 @@ describe("diagram-domain HTTP contract", () => {
   });
 
   it("returns recent Study Questions, recent Quizzes, and Study Progress from the Student Dashboard", async () => {
-    const { app, cookies, csrfToken } = await registerStudent();
+    const { app, cookies, csrfToken } = await registerUser();
 
     await app.inject({
       method: "POST",

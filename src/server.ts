@@ -8,6 +8,7 @@ import { frontendOrigins } from "./config/env.js";
 import { prisma } from "./db/prisma.js";
 import { sendError } from "./http/errors.js";
 import { authPlugin } from "./plugins/auth.js";
+import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { quizzesRoutes } from "./routes/quizzes.js";
@@ -54,6 +55,7 @@ export async function buildServer(env: AppEnv) {
   app.get("/health", async () => ({ ok: true }));
 
   await app.register(authRoutes);
+  await app.register(adminRoutes);
   await app.register(dashboardRoutes);
   await app.register(studyQuestionsRoutes);
   await app.register(quizzesRoutes);

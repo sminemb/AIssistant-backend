@@ -4,11 +4,11 @@ import { prisma } from "../db/prisma.js";
 
 export async function studyProgressRoutes(app: FastifyInstance) {
   app.get("/study-progress", async (request) => {
-    const student = await app.requireStudent(request);
+    const user = await app.requireUser(request);
     const studyProgress = await prisma.studyProgress.upsert({
-      where: { studentId: student.id },
+      where: { userId: user.id },
       update: {},
-      create: { studentId: student.id },
+      create: { userId: user.id },
     });
 
     return { studyProgress };
