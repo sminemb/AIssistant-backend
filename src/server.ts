@@ -2,7 +2,6 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import Fastify from "fastify";
-
 import type { AppEnv } from "./config/env.js";
 import { frontendOrigins } from "./config/env.js";
 import { prisma } from "./db/prisma.js";
@@ -24,6 +23,8 @@ export async function buildServer(env: AppEnv) {
   await app.register(helmet);
   await app.register(cors, {
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
     origin(origin, callback) {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);

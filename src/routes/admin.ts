@@ -1,7 +1,6 @@
 import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-
 import { csrfCookieName } from "../auth/session.js";
 import { prisma } from "../db/prisma.js";
 import { HttpError } from "../http/errors.js";
@@ -24,9 +23,15 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.get("/admin/users", async (request) => {
-    await app.requireAdmin(request);
+    const currentAdmin = await app.requireAdmin(request);
 
     const users = await prisma.user.findMany({
+      where: {
+        OR: [
+          { role: "STUDENT" },
+          { id: currentAdmin.id }
+        ]
+      },
       select: {
         id: true,
         name: true,
