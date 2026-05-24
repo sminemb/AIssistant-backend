@@ -7,6 +7,7 @@ type UserRecord = {
   passwordHash: string;
   role: "STUDENT" | "ADMIN";
   createdAt: Date;
+  updatedAt?: Date;
 };
 
 type SessionRecord = {
@@ -115,16 +116,16 @@ function rawCookies(cookies: Array<{ name: string; value: string }>) {
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`);
 }
 
-async function registerAndLoginAdmin() {
+async function registerAndLoginAdmin(email = "admin@example.com", name = "Admin User") {
   const app = await buildServer(env);
   const register = await app.inject({
     method: "POST",
     url: "/auth/register",
-    payload: { name: "Admin User", email: "admin@example.com", password: "adminpassword" },
+    payload: { name, email, password: "adminpassword" },
   });
   
   // Manually promote to admin in the mock store
-  const adminUser = store.users.find(u => u.email === "admin@example.com");
+  const adminUser = store.users.find(u => u.email === email);
   if (adminUser) {
     adminUser.role = "ADMIN";
   }
@@ -132,7 +133,7 @@ async function registerAndLoginAdmin() {
   const login = await app.inject({
     method: "POST",
     url: "/auth/login",
-    payload: { email: "admin@example.com", password: "adminpassword" },
+    payload: { email, password: "adminpassword" },
   });
 
   const csrf = await app.inject({ method: "GET", url: "/admin/csrf", headers: { cookie: cookieHeader(rawCookies(login.cookies)) } });
@@ -265,7 +266,7 @@ describe("Admin User Management HTTP Contract", () => {
   it("an admin can demote an admin to student (if not the last admin)", async () => {
     const { app, cookies, csrfToken, adminUser } = await registerAndLoginAdmin();
     // Create a second admin
-    const { adminUser: secondAdmin } = await registerAndLoginAdmin();
+    const { adminUser: secondAdmin } = await registerAndLoginAdmin("second-admin@example.com", "Second Admin");
     const secondAdminRecord = store.users.find(u => u.id === secondAdmin?.id);
     if (secondAdminRecord) secondAdminRecord.role = "ADMIN";
 
@@ -306,6 +307,7 @@ describe("Admin User Management HTTP Contract", () => {
 
   it("an admin cannot change their own role", async () => {
     const { app, cookies, csrfToken, adminUser } = await registerAndLoginAdmin();
+    await registerAndLoginAdmin("second-admin@example.com", "Second Admin");
 
     const response = await app.inject({
       method: "PATCH",
@@ -357,7 +359,7 @@ describe("Admin User Management HTTP Contract", () => {
   it("an admin can delete another admin (if not the last admin)", async () => {
     const { app, cookies, csrfToken, adminUser } = await registerAndLoginAdmin();
     // Create a second admin
-    const { adminUser: secondAdmin } = await registerAndLoginAdmin();
+    const { adminUser: secondAdmin } = await registerAndLoginAdmin("second-admin@example.com", "Second Admin");
     const secondAdminRecord = store.users.find(u => u.id === secondAdmin?.id);
     if (secondAdminRecord) secondAdminRecord.role = "ADMIN";
 
@@ -393,7 +395,7 @@ describe("Admin User Management HTTP Contract", () => {
   it("an admin cannot delete their own account", async () => {
     const { app, cookies, csrfToken, adminUser } = await registerAndLoginAdmin();
     // Create a second admin so adminUser is not the last admin
-    const { adminUser: secondAdmin } = await registerAndLoginAdmin();
+    const { adminUser: secondAdmin } = await registerAndLoginAdmin("second-admin@example.com", "Second Admin");
     const secondAdminRecord = store.users.find(u => u.id === secondAdmin?.id);
     if (secondAdminRecord) secondAdminRecord.role = "ADMIN";
 
