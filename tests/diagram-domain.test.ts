@@ -313,9 +313,12 @@ describe("diagram-domain HTTP contract", () => {
 
     expect(login.statusCode).toBe(200);
     expect(loginBody.user).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
+    expect(loginBody.student).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
     expect(loginBody.user).not.toHaveProperty("passwordHash");
+    expect(loginBody.student).not.toHaveProperty("passwordHash");
     expect(me.statusCode).toBe(200);
     expect(meBody.user).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
+    expect(meBody.student).toMatchObject({ name: "Ada Student", email: "ada@example.com" });
 
     await app.close();
   });
