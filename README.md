@@ -1,5 +1,8 @@
 # AIssistant Backend
 
+**Backend Repository**: [AIssistant-backend](https://github.com/sminemb/AIssistant-backend)  
+**Frontend Repository**: [AIssistant-frontend](https://github.com/carlotata/AIssistant) 
+
 REST JSON backend for AIssistant, an academic chatbot for students powered by Google's Gemini AI models.
 
 ## Stack
