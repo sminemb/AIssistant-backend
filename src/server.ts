@@ -1,6 +1,7 @@
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import type { AppEnv } from "./config/env.js";
 import { frontendOrigins } from "./config/env.js";
@@ -35,6 +36,10 @@ export async function buildServer(env: AppEnv) {
     },
   });
   await app.register(cookie, { secret: env.SESSION_SECRET });
+  await app.register(rateLimit, {
+    max: 100, // limit each IP to 100 requests per windowMs
+    timeWindow: 1000 * 60, // 1 minute
+  });
   await app.register(authPlugin);
 
   app.setErrorHandler((error, request, reply) => {
@@ -55,7 +60,14 @@ export async function buildServer(env: AppEnv) {
 
   app.get("/health", async () => ({ ok: true }));
 
-  await app.register(authRoutes);
+  await app.register(authRoutes, {
+    config: {
+      rateLimit: {
+        max: 5, // 5 requests per minute for auth routes
+        timeWindow: 1000 * 60,
+      },
+    },
+  });
   await app.register(adminRoutes);
   await app.register(dashboardRoutes);
   await app.register(studyQuestionsRoutes);
