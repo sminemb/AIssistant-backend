@@ -1,13 +1,14 @@
-import type { Student } from "@prisma/client";
+import type { User } from "@prisma/client";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 declare module "fastify" {
   interface FastifyRequest {
-    student: Student | null;
+    user: User | null;
   }
 
   interface FastifyInstance {
-    requireStudent(request: FastifyRequest): Promise<Student>;
+    requireUser(request: FastifyRequest): Promise<User>;
+    requireAdmin(request: FastifyRequest): Promise<User>;
     issueCsrfToken(request: FastifyRequest, reply: FastifyReply): Promise<string>;
   }
 }

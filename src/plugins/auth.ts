@@ -6,7 +6,7 @@ import { HttpError } from "../http/errors.js";
 import {
   csrfCookieName,
   newOpaqueToken,
-  readSessionStudent,
+  readSession,
   safeEqual,
   sessionCookieName,
 } from "../auth/session.js";
@@ -14,13 +14,14 @@ import {
 const unsafeMethods = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
 export const authPlugin = fp(async (app) => {
-  app.decorateRequest("student", null);
+  app.decorateRequest("user", null);
 
   app.addHook("preHandler", async (request, reply) => {
-    const token = request.cookies[sessionCookieName];
-    request.student = await readSessionStudent(prisma, token);
+    const sessionToken = request.cookies[sessionCookieName];
+    request.user = await readSession(prisma, sessionToken);
 
-    if (request.student && unsafeMethods.has(request.method)) {
+    const isAuthenticated = request.user;
+    if (isAuthenticated && unsafeMethods.has(request.method)) {
       const headerToken = request.headers["x-csrf-token"];
       const csrfHeader = Array.isArray(headerToken) ? headerToken[0] : headerToken;
       const csrfCookie = request.cookies[csrfCookieName];
@@ -31,12 +32,21 @@ export const authPlugin = fp(async (app) => {
     }
   });
 
-  app.decorate("requireStudent", async (request: FastifyRequest) => {
-    if (!request.student) {
+  app.decorate("requireUser", async (request: FastifyRequest) => {
+    if (!request.user) {
       throw new HttpError(401, "AUTH_REQUIRED", "Authentication is required");
     }
 
-    return request.student;
+    return request.user;
+  });
+
+  app.decorate("requireAdmin", async (request: FastifyRequest) => {
+    const user = await app.requireUser(request);
+    if (user.role !== "ADMIN") {
+      throw new HttpError(403, "ADMIN_REQUIRED", "Admin access is required");
+    }
+
+    return user;
   });
 
   app.decorate("issueCsrfToken", async (_request: FastifyRequest, reply: FastifyReply) => {

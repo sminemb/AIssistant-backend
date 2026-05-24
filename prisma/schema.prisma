@@ -12,11 +12,17 @@ enum QuizState {
   COMPLETED
 }
 
-model Student {
-  id           Int      @id @default(autoincrement()) @map("student_id")
+enum UserRole {
+  STUDENT
+  ADMIN
+}
+
+model User {
+  id           Int      @id @default(autoincrement()) @map("user_id")
   name         String   @db.VarChar(120)
   email        String   @unique @db.VarChar(255)
   passwordHash String   @map("password_hash") @db.VarChar(255)
+  role         UserRole @default(STUDENT)
   createdAt    DateTime @default(now()) @map("created_at")
 
   sessions       Session[]
@@ -27,47 +33,47 @@ model Student {
 
 model Session {
   id        Int       @id @default(autoincrement()) @map("session_id")
-  studentId Int       @map("student_id")
+  userId    Int       @map("user_id")
   tokenHash String    @unique @map("token_hash") @db.VarChar(64)
   expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([studentId])
+  @@index([userId])
   @@index([expiresAt])
 }
 
 model StudyQuestion {
   id              Int      @id @default(autoincrement()) @map("question_id")
-  studentId       Int      @map("student_id")
+  userId          Int      @map("user_id")
   questionText    String   @map("question_text") @db.Text
   chatbotResponse String   @map("chatbot_response") @db.Text
   createdAt       DateTime @default(now()) @map("created_at")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([studentId])
-  @@index([studentId, createdAt])
+  @@index([userId])
+  @@index([userId, createdAt])
 }
 
 model Quiz {
   id        Int       @id @default(autoincrement()) @map("quiz_id")
-  studentId Int       @map("student_id")
+  userId    Int       @map("user_id")
   quizTopic String    @map("quiz_topic") @db.VarChar(200)
   score     Float?
   state     QuizState @default(GENERATED)
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  student   Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   questions QuizQuestion[]
   answers   QuizAnswer[]
 
-  @@index([studentId])
-  @@index([studentId, state])
-  @@index([studentId, quizTopic])
+  @@index([userId])
+  @@index([userId, state])
+  @@index([userId, quizTopic])
 }
 
 model QuizQuestion {
@@ -116,11 +122,11 @@ model QuizAnswer {
 
 model StudyProgress {
   id              Int      @id @default(autoincrement()) @map("progress_id")
-  studentId       Int      @unique @map("student_id")
+  userId          Int      @unique @map("user_id")
   completedTopics Int      @default(0) @map("completed_topics")
   totalQuizzes    Int      @default(0) @map("total_quizzes")
   averageScore    Float    @default(0) @map("average_score")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

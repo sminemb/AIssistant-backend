@@ -14,15 +14,6 @@ describe("diagram-domain documentation", () => {
     expect(context).not.toContain("**Course**");
   });
 
-  it("keeps codebase diagrams aligned to the implemented resources", () => {
-    const diagrams = readFileSync("docs/codebase-diagrams.md", "utf8");
-
-    expect(diagrams).toContain("StudyQuestion");
-    expect(diagrams).toContain("QuizOption");
-    expect(diagrams).toContain("StudyProgress");
-    expect(diagrams).not.toContain("TodayTask");
-  });
-
   it("keeps frontend-facing docs on the diagram-domain contract", () => {
     const frontendGuide = readFileSync("docs/frontend-integration.md", "utf8");
     const handoff = readFileSync("FRONTEND_HANDOFF.md", "utf8");

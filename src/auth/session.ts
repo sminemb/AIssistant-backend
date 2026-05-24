@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
-import type { PrismaClient, Student } from "@prisma/client";
+import type { PrismaClient, User } from "@prisma/client";
 
 export const sessionCookieName = "aissistant_session";
 export const csrfCookieName = "aissistant_csrf";
@@ -14,13 +14,13 @@ export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(prisma: PrismaClient, studentId: number) {
+export async function createSession(prisma: PrismaClient, userId: number) {
   const token = newOpaqueToken();
   const expiresAt = new Date(Date.now() + sessionTtlMs);
 
   await prisma.session.create({
     data: {
-      studentId,
+      userId,
       tokenHash: hashToken(token),
       expiresAt,
     },
@@ -29,24 +29,24 @@ export async function createSession(prisma: PrismaClient, studentId: number) {
   return { token, expiresAt };
 }
 
-export async function readSessionStudent(
+export async function readSession(
   prisma: PrismaClient,
   token: string | undefined,
-): Promise<Student | null> {
+): Promise<User | null> {
   if (!token) {
     return null;
   }
 
   const session = await prisma.session.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: { student: true },
+    include: { user: true },
   });
 
   if (!session || session.revokedAt || session.expiresAt <= new Date()) {
     return null;
   }
 
-  return session.student;
+  return session.user;
 }
 
 export async function revokeSession(prisma: PrismaClient, token: string | undefined) {
@@ -71,11 +71,12 @@ export function safeEqual(left: string | undefined, right: string | undefined) {
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-export function publicStudent(student: Student) {
+export function publicUser(user: User) {
   return {
-    id: student.id,
-    name: student.name,
-    email: student.email,
-    createdAt: student.createdAt,
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    createdAt: user.createdAt,
   };
 }
