@@ -13,11 +13,8 @@ REST JSON backend for AIssistant, an academic chatbot for students powered by Go
 
 ## Documentation
 
-- [Codebase diagrams](docs/codebase-diagrams.md)
 - [Frontend integration guide](docs/frontend-integration.md)
 - [Domain glossary](CONTEXT.md)
-- GitHub PRD: [#13 Align backend with AIssistant chatbot diagrams](https://github.com/sminemb/AIssistant-backend/issues/13)
-- Implementation slices: [#14](https://github.com/sminemb/AIssistant-backend/issues/14) through [#21](https://github.com/sminemb/AIssistant-backend/issues/21)
 
 ---
 
@@ -160,20 +157,21 @@ Auth and ownership failures use stable codes such as:
 
 - Browser clients must use `credentials: "include"`.
 - Fetch `GET /auth/csrf` and send the returned token in `X-CSRF-Token` for unsafe methods.
-- `POST /auth/register` and `POST /auth/login` issue the session cookie and return `{ student }`.
-- Student responses never include `passwordHash`.
+- `POST /auth/register` and `POST /auth/login` issue the session cookie and return `{ user }`.
+- User responses never include `passwordHash`.
 
 ---
 
 # DTOs
 
-## StudentDTO
+## UserDTO
 
 ```ts
 {
   id: number;
   name: string;
   email: string;
+  role: "STUDENT" | "ADMIN";
   createdAt: string;
 }
 ```
@@ -183,7 +181,7 @@ Auth and ownership failures use stable codes such as:
 ```ts
 {
   id: number;
-  studentId: number;
+  userId: number;
   questionText: string;
   chatbotResponse: string;
   createdAt: string;
@@ -195,7 +193,7 @@ Auth and ownership failures use stable codes such as:
 ```ts
 {
   id: number;
-  studentId: number;
+  userId: number;
   quizTopic: string;
   score: number | null;
   state: "GENERATED" | "COMPLETED";
@@ -263,7 +261,7 @@ Completed quizzes include correctness and the student's selected options for Qui
 ```ts
 {
   id: number;
-  studentId: number;
+  userId: number;
   completedTopics: number;
   totalQuizzes: number;
   averageScore: number;
