@@ -10,6 +10,7 @@ import { sendError } from "./http/errors.js";
 import { authPlugin } from "./plugins/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
+import { conversationRoutes } from "./routes/conversations.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { quizzesRoutes } from "./routes/quizzes.js";
 import { studyProgressRoutes } from "./routes/study-progress.js";
@@ -70,6 +71,7 @@ export async function buildServer(env: AppEnv) {
   });
   await app.register(adminRoutes);
   await app.register(dashboardRoutes);
+  await app.register(conversationRoutes);
   await app.register(studyQuestionsRoutes);
   await app.register(quizzesRoutes);
   await app.register(studyProgressRoutes);

@@ -24,7 +24,10 @@ export type GeneratedQuiz = {
 };
 
 export interface AssistantProvider {
-   answerStudyQuestion(questionText: string): Promise<StudyQuestionReply>;
+   answerStudyQuestion(
+      questionText: string,
+      history?: Array<{ role: string; content: string }>,
+   ): Promise<StudyQuestionReply>;
 
    generateQuiz(
       quizTopic: string,
@@ -128,77 +131,95 @@ export class GeminiAssistantProvider implements AssistantProvider {
    private async request(
       systemPrompt: string,
       userContent: unknown,
+      retryCount: number = 3,
    ): Promise<string> {
       const geminiApiUrl =
          "https://generativelanguage.googleapis.com/v1beta/models/";
 
       let lastError: unknown;
 
-      for (const model of this.modelsToTry) {
-         try {
-            console.log(`Trying Gemini model: ${model}`);
+      for (let attempt = 0; attempt < retryCount; attempt++) {
+         for (const model of this.modelsToTry) {
+            try {
+               console.log(`Trying Gemini model: ${model} (Attempt ${attempt + 1})`);
 
-            const url = `${geminiApiUrl}${model}:generateContent?key=${this.apiKey}`;
+               const url = `${geminiApiUrl}${model}:generateContent?key=${this.apiKey}`;
 
-            const response = await this.fetchImpl(url, {
-               method: "POST",
-               headers: {
-                  "Content-Type": "application/json",
-               },
-               body: JSON.stringify({
-                  contents: [
-                     {
-                        parts: [
-                           {
-                              text:
-                                 `${systemPrompt}\n\n` +
-                                 `User request:\n${JSON.stringify(
-                                    userContent,
-                                 )}`,
-                           },
-                        ],
-                     },
-                  ],
-               }),
-            });
+               const response = await this.fetchImpl(url, {
+                  method: "POST",
+                  headers: {
+                     "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                     contents: [
+                        {
+                           parts: [
+                              {
+                                 text:
+                                    `${systemPrompt}\n\n` +
+                                    `User request:\n${JSON.stringify(
+                                       userContent,
+                                    )}`,
+                              },
+                           ],
+                        },
+                     ],
+                  }),
+               });
 
-            const responseData = await response.json();
+               const responseData = await response.json();
 
-            if (!response.ok) {
-               console.error(
-                  `Gemini API Error with model ${model}:`,
-                  responseData,
+               if (!response.ok) {
+                  console.error(
+                     `Gemini API Error with model ${model}:`,
+                     JSON.stringify(responseData, null, 2),
+                  );
+
+                  lastError = responseData;
+                  
+                  // Handle Quota Exceeded (429) explicitly
+                  if (response.status === 429) {
+                     throw new HttpError(429, "QUOTA_EXCEEDED", "Daily request limit reached. Please try again tomorrow.");
+                  }
+
+                  // Don't retry on other 400-level errors
+                  if (response.status >= 400 && response.status < 500) {
+                      throw new HttpError(response.status, "GEMINI_API_ERROR", JSON.stringify(responseData));
+                  }
+                  continue; 
+               }
+
+               const text =
+                  responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+               if (text) {
+                  console.log(`Success using Gemini model: ${model}`);
+
+                  return text;
+               }
+
+               console.warn(
+                  `Unexpected Gemini response structure for model ${model}`,
                );
 
                lastError = responseData;
-               continue;
+            } catch (error) {
+               console.error(`Gemini request failed for model ${model}:`, error);
+
+               lastError = error;
             }
-
-            const text =
-               responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-            if (text) {
-               console.log(`Success using Gemini model: ${model}`);
-
-               return text;
-            }
-
-            console.warn(
-               `Unexpected Gemini response structure for model ${model}`,
-            );
-
-            lastError = responseData;
-         } catch (error) {
-            console.error(`Gemini request failed for model ${model}:`, error);
-
-            lastError = error;
          }
+         
+         // Wait before retrying (exponential backoff)
+         const delay = Math.pow(2, attempt) * 1000;
+         console.log(`Retrying in ${delay}ms...`);
+         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
       throw new HttpError(
          502,
          "ASSISTANT_PROVIDER_FAILED",
-         `AI Study Assistant provider request failed after trying all models. ${String(
+         `AI Study Assistant provider request failed after ${retryCount} attempts. ${String(
             lastError,
          )}`,
       );
@@ -206,15 +227,21 @@ export class GeminiAssistantProvider implements AssistantProvider {
 
    async answerStudyQuestion(
       questionText: string,
+      history: Array<{ role: string; content: string }> = [],
    ): Promise<StudyQuestionReply> {
       const systemPrompt = `
 You are a helpful AI study assistant.
 
 Provide concise and accurate educational answers.
+
+CRITICAL RULE: If the user asks to create or start a quiz, provide a brief, encouraging introduction or high-level summary of the topic, but DO NOT list the questions or give away the answers in your response. 
+
+If you recommend a quiz, you may suggest a number of questions by saying "Take Quiz Now: X" (where X is your suggested number). This will help the user get started quickly. The actual quiz will be generated separately.
 `;
 
       const responseText = await this.request(systemPrompt, {
          question: questionText,
+         history,
       });
 
       return parseStudyQuestionReply(responseText);

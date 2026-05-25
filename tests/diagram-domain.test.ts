@@ -74,6 +74,7 @@ const store = vi.hoisted(() => ({
   users: [] as UserRecord[],
   sessions: [] as SessionRecord[],
   studyQuestions: [] as StudyQuestionRecord[],
+  conversations: [] as { id: number; userId: number; title: string; createdAt: Date; updatedAt: Date }[],
   quizzes: [] as QuizRecord[],
   quizQuestions: [] as QuizQuestionRecord[],
   quizOptions: [] as QuizOptionRecord[],
@@ -164,6 +165,17 @@ const prismaMock = vi.hoisted(() => ({
     }),
     updateMany: vi.fn(async () => ({ count: 0 })),
   },
+  conversation: {
+    findMany: vi.fn(async ({ where, take }: { where: { userId: number }; take?: number }) => {
+      const ordered = orderDescByCreatedAt(store.conversations.filter((conv) => conv.userId === where.userId));
+      return take ? ordered.slice(0, take) : ordered;
+    }),
+    create: vi.fn(async ({ data }: { data: { userId: number; title: string } }) => {
+      const conversation = { id: nextId(), ...data, createdAt: new Date(), updatedAt: new Date() };
+      store.conversations.push(conversation);
+      return conversation;
+    }),
+  },
   studyQuestion: {
     findMany: vi.fn(async ({ where, take }: { where: { userId: number }; take?: number }) => {
       const ordered = orderDescByCreatedAt(store.studyQuestions.filter((question) => question.userId === where.userId));
@@ -218,14 +230,14 @@ const prismaMock = vi.hoisted(() => ({
   },
   studyProgress: {
     upsert: vi.fn(async ({ where, update, create }: { where: { userId: number }; update?: Partial<StudyProgressRecord>; create: Partial<StudyProgressRecord> & { userId: number } }) => {
-      const existing = store.studyProgress.find((progress) => progress.userId === where.userId);
-      if (existing) {
-        if (update && Object.keys(update).length > 0) {
-          Object.assign(existing, update, { updatedAt: new Date() });
-        }
-        return existing;
+      let progress = store.studyProgress.find((p) => p.userId === where.userId);
+      if (progress) {
+          if (update && Object.keys(update).length > 0) {
+              Object.assign(progress, update, { updatedAt: new Date() });
+          }
+          return progress;
       }
-      const progress = { id: nextId(), completedTopics: 0, totalQuizzes: 0, averageScore: 0, updatedAt: new Date(), ...create };
+      progress = { id: nextId(), completedTopics: 0, totalQuizzes: 0, averageScore: 0, updatedAt: new Date(), ...create };
       store.studyProgress.push(progress);
       return progress;
     }),
@@ -499,14 +511,14 @@ describe("diagram-domain HTTP contract", () => {
     await app.close();
   });
 
-  it("returns recent Study Questions, recent Quizzes, and Study Progress from the Student Dashboard", async () => {
+  it("returns recent Conversations, recent Quizzes, and Study Progress from the Student Dashboard", async () => {
     const { app, cookies, csrfToken } = await registerUser();
 
     await app.inject({
       method: "POST",
-      url: "/study-questions",
+      url: "/conversations",
       headers: { cookie: cookieHeader(cookies), "x-csrf-token": csrfToken },
-      payload: { questionText: "What is mitosis?" },
+      payload: { title: "Biology Discussion" },
     });
     await app.inject({
       method: "POST",
@@ -522,7 +534,7 @@ describe("diagram-domain HTTP contract", () => {
     const body = JSON.parse(dashboard.body);
 
     expect(dashboard.statusCode).toBe(200);
-    expect(body.recentStudyQuestions[0]).toMatchObject({ questionText: "What is mitosis?" });
+    expect(body.recentConversations[0]).toMatchObject({ title: "Biology Discussion" });
     expect(body.recentQuizzes[0]).toMatchObject({ quizTopic: "Biology", state: "GENERATED" });
     expect(body.studyProgress).toMatchObject({ completedTopics: 0, totalQuizzes: 0, averageScore: 0 });
 

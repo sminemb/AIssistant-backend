@@ -11,7 +11,7 @@ const quizParamsSchema = z.object({ quizId: z.coerce.number().int().positive() }
 
 const createQuizSchema = z.object({
   quizTopic: z.string().trim().min(1).max(200),
-  questionCount: z.number().int().min(1).max(10).optional().default(5),
+  questionCount: z.union([z.number().int().min(1).max(10), z.string().transform(Number)]).optional().default(5),
 });
 
 const submitQuizSchema = z.object({
@@ -139,6 +139,17 @@ export async function quizzesRoutes(app: FastifyInstance) {
     });
 
     return reply.status(201).send({ quiz: quizDto(quiz, false) });
+  });
+
+  app.delete("/quizzes/:quizId", async (request) => {
+    const user = await app.requireUser(request);
+    const params = parseParams(request, quizParamsSchema);
+    
+    await prisma.quiz.deleteMany({
+      where: { id: params.quizId, userId: user.id },
+    });
+    
+    return { success: true };
   });
 
   app.get("/quizzes/:quizId", async (request) => {

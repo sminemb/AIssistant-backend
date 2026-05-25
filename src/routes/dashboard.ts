@@ -5,10 +5,10 @@ import { prisma } from "../db/prisma.js";
 export async function dashboardRoutes(app: FastifyInstance) {
   app.get("/dashboard/summary", async (request) => {
     const user = await app.requireUser(request);
-    const [recentStudyQuestions, recentQuizzes, studyProgress] = await Promise.all([
-      prisma.studyQuestion.findMany({
+    const [recentConversations, recentQuizzes, studyProgress] = await Promise.all([
+      prisma.conversation.findMany({
         where: { userId: user.id },
-        orderBy: { createdAt: "desc" },
+        orderBy: { updatedAt: "desc" },
         take: 5,
       }),
       prisma.quiz.findMany({
@@ -23,10 +23,17 @@ export async function dashboardRoutes(app: FastifyInstance) {
       }),
     ]);
 
+    // Simple placeholder for recommendations
+    const recommendations = [
+      { topic: "Quantum Mechanics", questions: 12 },
+      { topic: "Organic Chemistry", questions: 8 },
+    ];
+
     return {
-      recentStudyQuestions,
+      recentConversations,
       recentQuizzes,
       studyProgress,
+      recommendations,
     };
   });
 }
