@@ -121,7 +121,7 @@ async function registerAndLoginAdmin(email = "admin@example.com", name = "Admin 
   const register = await app.inject({
     method: "POST",
     url: "/auth/register",
-    payload: { name, email, password: "adminpassword" },
+    payload: { name, email, password: "AdminPassword1!" },
   });
   
   // Manually promote to admin in the mock store
@@ -133,7 +133,7 @@ async function registerAndLoginAdmin(email = "admin@example.com", name = "Admin 
   const login = await app.inject({
     method: "POST",
     url: "/auth/login",
-    payload: { email, password: "adminpassword" },
+    payload: { email, password: "AdminPassword1!" },
   });
 
   const csrf = await app.inject({ method: "GET", url: "/admin/csrf", headers: { cookie: cookieHeader(rawCookies(login.cookies)) } });
@@ -148,13 +148,13 @@ async function registerAndLoginStudent() {
     const register = await app.inject({
       method: "POST",
       url: "/auth/register",
-      payload: { name: "Student User", email: "student@example.com", password: "studentpassword" },
+      payload: { name: "Student User", email: "student@example.com", password: "StudentPassword1!" },
     });
   
     const login = await app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { email: "student@example.com", password: "studentpassword" },
+      payload: { email: "student@example.com", password: "StudentPassword1!" },
     });
   
     const csrf = await app.inject({ method: "GET", url: "/admin/csrf", headers: { cookie: cookieHeader(rawCookies(login.cookies)) } });
@@ -209,7 +209,7 @@ describe("Admin User Management HTTP Contract", () => {
     await app.inject({
         method: "POST",
         url: "/auth/register",
-        payload: { name: "Another Student", email: "another@example.com", password: "password" },
+        payload: { name: "Another Student", email: "another@example.com", password: "Password1!" },
     });
 
     const response = await app.inject({

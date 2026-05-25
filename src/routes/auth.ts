@@ -15,7 +15,10 @@ import { parseBody } from "../http/validation.js";
 
 const registerSchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase()),
-  password: z.string().min(8),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters long")
+    .regex(/[0-9]/, "Password must contain at least one number"),
   name: z.string().trim().min(1).max(120),
 });
 

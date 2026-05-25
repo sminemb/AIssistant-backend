@@ -259,7 +259,7 @@ async function registerUser() {
   const register = await app.inject({
     method: "POST",
     url: "/auth/register",
-    payload: { name: "Ada Student", email: "ada@example.com", password: "correct horse battery staple" },
+    payload: { name: "Ada Student", email: "ada@example.com", password: "Password1!" },
   });
   const csrf = await app.inject({ method: "GET", url: "/auth/csrf", headers: { cookie: cookieHeader(rawCookies(register.cookies)) } });
   const sessionCookies = rawCookies(register.cookies).filter((cookie) => cookie.startsWith("aissistant_session="));
@@ -301,7 +301,7 @@ describe("diagram-domain HTTP contract", () => {
     const login = await app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { email: "ADA@example.com", password: "correct horse battery staple" },
+      payload: { email: "ADA@example.com", password: "Password1!" },
     });
     const loginBody = JSON.parse(login.body);
     const me = await app.inject({
