@@ -66,6 +66,11 @@ export async function authRoutes(app: FastifyInstance) {
         studyProgress: { create: {} },
       },
     });
+
+    await prisma.systemLog.create({
+      data: { userId: user.id, action: "User registered" }
+    });
+
     const session = await createSession(prisma, user.id);
     await app.issueCsrfToken(request, reply);
 
@@ -85,6 +90,10 @@ export async function authRoutes(app: FastifyInstance) {
       throw new HttpError(403, "ACCESS_DENIED", `Access denied. ${body.role} privileges required.`);
     }
 
+    await prisma.systemLog.create({
+      data: { userId: user.id, action: "User logged in" }
+    });
+
     const session = await createSession(prisma, user.id);
     await app.issueCsrfToken(request, reply);
 
@@ -93,7 +102,16 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post("/auth/logout", async (request, reply) => {
-    await revokeSession(prisma, request.cookies[sessionCookieName]);
+    const sessionToken = request.cookies[sessionCookieName];
+    const session = await prisma.session.findUnique({ where: { tokenHash: sessionToken } });
+    
+    if (session) {
+      await prisma.systemLog.create({
+        data: { userId: session.userId, action: "User logged out" }
+      });
+    }
+
+    await revokeSession(prisma, sessionToken);
     reply.clearCookie(sessionCookieName, { path: "/" });
     reply.clearCookie(csrfCookieName, { path: "/" });
     return reply.status(204).send();

@@ -19,6 +19,7 @@ model User {
   sessions       Session[]
   studyProgress  StudyProgress?
   studyQuestions StudyQuestion[]
+  systemLogs     SystemLog[]
 }
 
 model Session {
@@ -37,8 +38,8 @@ model Session {
 model StudyQuestion {
   id              Int      @id @default(autoincrement()) @map("question_id")
   userId          Int      @map("user_id")
-  questionText    String   @map("question_text") @db.Text
-  chatbotResponse String   @map("chatbot_response") @db.Text
+  questionText    String   @map("question_text")
+  chatbotResponse String   @map("chatbot_response")
   createdAt       DateTime @default(now()) @map("created_at")
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -66,7 +67,7 @@ model Quiz {
 model QuizQuestion {
   id           Int          @id @default(autoincrement()) @map("quiz_question_id")
   quizId       Int          @map("quiz_id")
-  questionText String       @map("question_text") @db.Text
+  questionText String       @map("question_text")
   position     Int
   answer       QuizAnswer?
   options      QuizOption[]
@@ -79,7 +80,7 @@ model QuizQuestion {
 model QuizOption {
   id              Int          @id @default(autoincrement()) @map("quiz_option_id")
   quizQuestionId  Int          @map("quiz_question_id")
-  optionText      String       @map("option_text") @db.Text
+  optionText      String       @map("option_text")
   position        Int
   isCorrect       Boolean      @map("is_correct")
   selectedAnswers QuizAnswer[]
@@ -126,11 +127,23 @@ model Conversation {
   @@index([userId])
 }
 
+model SystemLog {
+  id        Int      @id @default(autoincrement()) @map("log_id")
+  userId    Int?     @map("user_id")
+  action    String   @db.VarChar(100)
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
 model Message {
   id             Int          @id @default(autoincrement()) @map("message_id")
   conversationId Int          @map("conversation_id")
   role           String       @db.VarChar(20)
-  content        String       @db.Text
+  content        String
   createdAt      DateTime     @default(now()) @map("created_at")
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

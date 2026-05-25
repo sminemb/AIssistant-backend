@@ -37,6 +37,11 @@ export async function conversationRoutes(app: FastifyInstance) {
         title: body.title,
       },
     });
+
+    await prisma.systemLog.create({
+      data: { userId: user.id, action: `Started conversation: ${body.title}` }
+    });
+
     return reply.status(201).send({ conversation });
   });
 
@@ -47,6 +52,10 @@ export async function conversationRoutes(app: FastifyInstance) {
     await prisma.conversation.deleteMany({
       where: { id: params.id, userId: user.id },
     });
+
+    await prisma.systemLog.create({
+      data: { userId: user.id, action: `Deleted conversation: ${params.id}` }
+    });
     
     return { success: true };
   });
@@ -54,6 +63,11 @@ export async function conversationRoutes(app: FastifyInstance) {
   app.get("/conversations/:id/messages", async (request) => {
     const user = await app.requireUser(request);
     const params = parseParams(request, conversationParamsSchema);
+    
+    await prisma.systemLog.create({
+      data: { userId: user.id, action: `Viewed conversation: ${params.id}` }
+    });
+
     return prisma.message.findMany({
       where: { conversationId: params.id, conversation: { userId: user.id } },
       orderBy: { createdAt: "asc" },
@@ -94,7 +108,22 @@ export async function conversationRoutes(app: FastifyInstance) {
 
     // 3. Call Assistant
     const assistantProvider = createAssistantProvider(app.config);
-    const replyData = await assistantProvider.answerStudyQuestion(body.content, history);
+    let replyData: Awaited<ReturnType<typeof assistantProvider.answerStudyQuestion>>;
+    
+    try {
+        replyData = await assistantProvider.answerStudyQuestion(body.content, history);
+    } catch (error: any) {
+        console.error("Assistant request failed:", error);
+        const errorMessage = "I'm having trouble connecting to my study brain right now. Please try again in a little while.";
+        const assistantMessage = await prisma.message.create({
+            data: {
+                conversationId: conversation.id,
+                role: "assistant",
+                content: errorMessage,
+            },
+        });
+        return reply.status(200).send({ messages: [assistantMessage] });
+    }
 
     // Append 'Take Quiz Now' if not present to trigger the frontend button. 
     // Now expecting format: "Take Quiz Now: X questions"

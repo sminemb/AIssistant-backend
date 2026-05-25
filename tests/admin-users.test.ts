@@ -93,6 +93,9 @@ const prismaMock = vi.hoisted(() => ({
     }),
     updateMany: vi.fn(async () => ({ count: 0 }) as any),
   },
+  systemLog: {
+    create: vi.fn(async () => ({ id: nextId() })),
+  },
   $disconnect: vi.fn(async () => undefined),
 }));
 
@@ -108,12 +111,14 @@ const env = {
   FRONTEND_ORIGINS: "http://localhost:3000",
 };
 
-function cookieHeader(setCookies: string[]) {
-  return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
+function getCookies(response: any) {
+  const setCookie = response.headers["set-cookie"];
+  if (!setCookie) return [];
+  return Array.isArray(setCookie) ? setCookie : [setCookie];
 }
 
-function rawCookies(cookies: Array<{ name: string; value: string }>) {
-  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`);
+function cookieHeader(cookies: string[]) {
+  return cookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
 
 async function registerAndLoginAdmin(email = "admin@example.com", name = "Admin User") {
@@ -124,7 +129,7 @@ async function registerAndLoginAdmin(email = "admin@example.com", name = "Admin 
     payload: { name, email, password: "AdminPassword1!" },
   });
   
-  // Manually promote to admin in the mock store
+  // Directly set the role to ADMIN for the test user in the mock store immediately
   const adminUser = store.users.find(u => u.email === email);
   if (adminUser) {
     adminUser.role = "ADMIN";
@@ -136,11 +141,13 @@ async function registerAndLoginAdmin(email = "admin@example.com", name = "Admin 
     payload: { email, password: "AdminPassword1!" },
   });
 
-  const csrf = await app.inject({ method: "GET", url: "/admin/csrf", headers: { cookie: cookieHeader(rawCookies(login.cookies)) } });
-  const sessionCookies = rawCookies(login.cookies).filter((cookie) => cookie.startsWith("aissistant_session="));
-  const cookies = [...sessionCookies, ...rawCookies(csrf.cookies)];
+  const cookies = getCookies(login);
+  const csrf = await app.inject({ method: "GET", url: "/admin/csrf", headers: { cookie: cookieHeader(cookies) } });
+  
+  const csrfCookies = getCookies(csrf);
+  const allCookies = [...cookies, ...csrfCookies];
   const csrfToken = JSON.parse(csrf.body).csrfToken as string;
-  return { app, cookies, csrfToken, adminUser };
+  return { app, cookies: allCookies, csrfToken, adminUser };
 }
 
 async function registerAndLoginStudent() {
@@ -157,11 +164,13 @@ async function registerAndLoginStudent() {
       payload: { email: "student@example.com", password: "StudentPassword1!" },
     });
   
-    const csrf = await app.inject({ method: "GET", url: "/admin/csrf", headers: { cookie: cookieHeader(rawCookies(login.cookies)) } });
-    const sessionCookies = rawCookies(login.cookies).filter((cookie) => cookie.startsWith("aissistant_session="));
-    const cookies = [...sessionCookies, ...rawCookies(csrf.cookies)];
+    const cookies = getCookies(login);
+    const csrf = await app.inject({ method: "GET", url: "/admin/csrf", headers: { cookie: cookieHeader(cookies) } });
+    
+    const csrfCookies = getCookies(csrf);
+    const allCookies = [...cookies, ...csrfCookies];
     const csrfToken = JSON.parse(csrf.body).csrfToken as string;
-    return { app, cookies, csrfToken, studentUser: store.users.find(u => u.email === "student@example.com") };
+    return { app, cookies: allCookies, csrfToken, studentUser: store.users.find(u => u.email === "student@example.com") };
   }
 
 

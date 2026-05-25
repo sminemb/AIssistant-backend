@@ -258,12 +258,14 @@ const env = {
   FRONTEND_ORIGINS: "http://localhost:3000",
 };
 
-function cookieHeader(setCookies: string[]) {
-  return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
+function getCookies(response: any) {
+  const setCookie = response.headers["set-cookie"];
+  if (!setCookie) return [];
+  return Array.isArray(setCookie) ? setCookie : [setCookie];
 }
 
-function rawCookies(cookies: Array<{ name: string; value: string }>) {
-  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`);
+function cookieHeader(cookies: string[]) {
+  return cookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
 
 async function registerUser() {
@@ -273,11 +275,14 @@ async function registerUser() {
     url: "/auth/register",
     payload: { name: "Ada Student", email: "ada@example.com", password: "Password1!" },
   });
-  const csrf = await app.inject({ method: "GET", url: "/auth/csrf", headers: { cookie: cookieHeader(rawCookies(register.cookies)) } });
-  const sessionCookies = rawCookies(register.cookies).filter((cookie) => cookie.startsWith("aissistant_session="));
-  const cookies = [...sessionCookies, ...rawCookies(csrf.cookies)];
+  
+  const registerCookies = getCookies(register);
+  const csrf = await app.inject({ method: "GET", url: "/auth/csrf", headers: { cookie: cookieHeader(registerCookies) } });
+  
+  const csrfCookies = getCookies(csrf);
+  const allCookies = [...registerCookies, ...csrfCookies];
   const csrfToken = JSON.parse(csrf.body).csrfToken as string;
-  return { app, cookies, csrfToken };
+  return { app, cookies: allCookies, csrfToken };
 }
 
 describe("diagram-domain HTTP contract", () => {
@@ -315,11 +320,12 @@ describe("diagram-domain HTTP contract", () => {
       url: "/auth/login",
       payload: { email: "ADA@example.com", password: "Password1!" },
     });
+    const loginCookies = getCookies(login);
     const loginBody = JSON.parse(login.body);
     const me = await app.inject({
       method: "GET",
       url: "/auth/me",
-      headers: { cookie: cookieHeader(rawCookies(login.cookies)) },
+      headers: { cookie: cookieHeader(loginCookies) },
     });
     const meBody = JSON.parse(me.body);
 

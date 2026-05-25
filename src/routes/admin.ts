@@ -26,12 +26,6 @@ export async function adminRoutes(app: FastifyInstance) {
     const currentAdmin = await app.requireAdmin(request);
 
     const users = await prisma.user.findMany({
-      where: {
-        OR: [
-          { role: "STUDENT" },
-          { id: currentAdmin.id }
-        ]
-      },
       select: {
         id: true,
         name: true,
@@ -43,6 +37,30 @@ export async function adminRoutes(app: FastifyInstance) {
     });
 
     return { users };
+  });
+
+  app.get("/admin/logs", async (request) => {
+    await app.requireAdmin(request);
+    const logs = await prisma.systemLog.findMany({
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    return { logs };
+  });
+
+  app.get("/admin/logs/:userId", async (request) => {
+    await app.requireAdmin(request);
+    const paramsSchema = z.object({
+      userId: z.string().transform(Number),
+    });
+    const { userId } = paramsSchema.parse(request.params);
+    const logs = await prisma.systemLog.findMany({
+      where: { userId },
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    return { logs };
   });
 
   app.post("/admin/create", async (request) => {
@@ -57,6 +75,10 @@ export async function adminRoutes(app: FastifyInstance) {
     const passwordHash = await bcrypt.hash(body.password, 10);
     const user = await prisma.user.create({
       data: { email: body.email, passwordHash, name: body.name, role: "ADMIN" },
+    });
+
+    await prisma.systemLog.create({
+        data: { userId: user.id, action: `Admin created user: ${body.email}` }
     });
 
     return { user: { id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt } };
@@ -100,6 +122,10 @@ export async function adminRoutes(app: FastifyInstance) {
       data: body,
     });
 
+    await prisma.systemLog.create({
+      data: { userId, action: `Admin updated user profile: ${updatedUser.email}` }
+    });
+
     return { user: { id: updatedUser.id, name: updatedUser.name, email: updatedUser.email, role: updatedUser.role, createdAt: updatedUser.createdAt } };
   });
 
@@ -137,6 +163,10 @@ export async function adminRoutes(app: FastifyInstance) {
       data: { role: newRole },
     });
 
+    await prisma.systemLog.create({
+      data: { userId, action: `Admin changed user role to: ${newRole}` }
+    });
+
     return { user: { id: updatedUser.id, name: updatedUser.name, email: updatedUser.email, role: updatedUser.role, createdAt: updatedUser.createdAt } };
   });
 
@@ -164,7 +194,12 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new HttpError(403, "CANNOT_DELETE_SELF", "You cannot delete your own account.");
     }
 
+    const userEmail = userToDelete.email;
     await prisma.user.delete({ where: { id: userId } });
+
+    await prisma.systemLog.create({
+      data: { userId: currentAdmin.id, action: `Admin deleted user: ${userEmail}` }
+    });
 
     return { message: "User deleted successfully" };
   });
