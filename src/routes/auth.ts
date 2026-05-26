@@ -32,8 +32,8 @@ function setSessionCookie(app: FastifyInstance, token: string, expiresAt: Date) 
   return {
     path: "/",
     httpOnly: true,
-    sameSite: "lax" as const,
-    secure: app.config.NODE_ENV === "production",
+    sameSite: "none" as const,
+    secure: true,
     expires: expiresAt,
   };
 }

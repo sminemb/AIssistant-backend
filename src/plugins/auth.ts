@@ -54,8 +54,8 @@ export const authPlugin = fp(async (app) => {
     reply.setCookie(csrfCookieName, token, {
       path: "/",
       httpOnly: false,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      sameSite: "none",
+      secure: true,
     });
     return token;
   });
