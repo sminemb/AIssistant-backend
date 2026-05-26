@@ -123,7 +123,13 @@ export async function quizzesRoutes(app: FastifyInstance) {
     const user = await app.requireUser(request);
     const body = parseBody(request, createQuizSchema);
     const assistantProvider = createAssistantProvider(app.config);
-    const generatedQuiz = await assistantProvider.generateQuiz(body.quizTopic, body.questionCount);
+    
+    // Check for attachments in the request body (if they were sent from frontend)
+    // Note: Assuming createQuizSchema would need to be updated to accept them if needed, 
+    // but we can look for them in request body directly for now if necessary.
+    const attachments = (body as any).attachments;
+
+    const generatedQuiz = await assistantProvider.generateQuiz(body.quizTopic, body.questionCount, attachments);
 
     // Shorten topic to 1-4 words, professional placeholder if too generic/short
     const words = body.quizTopic.split(/\s+/);

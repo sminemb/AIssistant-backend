@@ -28,12 +28,13 @@ export interface AssistantProvider {
       questionText: string,
       history?: Array<{ role: string; content: string }>,
       searchMode?: boolean,
-      attachments?: Array<{ name: string; type: string }>,
+      attachments?: Array<{ name: string; type: string; extractedText?: string }>,
    ): Promise<StudyQuestionReply>;
 
    generateQuiz(
       quizTopic: string,
       questionCount: number,
+      attachments?: Array<{ name: string; type: string; extractedText?: string }>,
    ): Promise<GeneratedQuiz>;
 }
 
@@ -228,11 +229,29 @@ export class GeminiAssistantProvider implements AssistantProvider {
       );
    }
 
+   private getFileInstruction(fileName: string, type: string): string {
+      const ext = fileName.split('.').pop()?.toLowerCase() || '';
+      
+      if (type.startsWith('image/')) {
+          return "- You are analyzing an IMAGE. Describe the visual elements, transcribe any text (OCR), and explain the context.";
+      }
+      if (ext === 'pdf' || type.includes('word')) {
+          return "- You are analyzing a DOCUMENT/PDF. Extract key arguments, summarize main takeaways, and provide a structured overview.";
+      }
+      if (type.includes('excel') || type.includes('spreadsheet')) {
+          return "- You are analyzing a SPREADSHEET/DATA. Identify main trends, anomalies, and summary statistics.";
+      }
+      if (['js', 'py', 'ts', 'java', 'c', 'cpp'].includes(ext)) {
+          return "- You are analyzing CODE. Review for bugs, security vulnerabilities, or optimization opportunities.";
+      }
+      return "- Analyze this file thoroughly and provide relevant insights.";
+   }
+
    async answerStudyQuestion(
       questionText: string,
       history: Array<{ role: string; content: string }> = [],
       searchMode: boolean = false,
-      attachments?: Array<{ name: string; type: string; data?: string }>,
+      attachments?: Array<{ name: string; type: string; extractedText?: string }>,
    ): Promise<StudyQuestionReply> {
       let systemPrompt = `
 You are a helpful AI study assistant.
@@ -271,65 +290,31 @@ SEARCH MODE ACTIVE:
 `;
       }
 
-      const userParts: any[] = [
-          {
-              text: `User request:\n${JSON.stringify({ question: questionText, history })}`,
-          }
-      ];
-
       if (attachments && attachments.length > 0) {
           systemPrompt += `
 ATTACHMENTS PROVIDED:
-I have provided ${attachments.length} attachment(s) for you to analyze.
+I have provided ${attachments.length} new attachment(s) for you to analyze.
 - You MUST scan the content of these files to answer the user's questions.
-- I have extracted the following text content for you:
-${attachments.map(a => `\n--- CONTENT FROM ${a.name} ---\n${a.extractedText || "[No text content extracted]"}`).join('\n')}
+- IGNORE any previous file contexts or topics from earlier in this conversation. Focus ONLY on the content of these new attachments.
+${attachments.map(a => `
+--- FILE: ${a.name} ---
+${this.getFileInstruction(a.name, a.type)}
+--- CONTENT ---
+${a.extractedText || "[No text content extracted]"}`).join('\n')}
 - PROACTIVE ACTION: After providing a brief summary of the file content, you MUST proactively offer to create a quiz based on the material in the file to help the user test their understanding. Include the hidden trigger tag [[GENERATE_QUIZ]] at the end if you offer the quiz.
 `;
       }
 
-      const geminiApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/";
-      const model = this.modelsToTry[0] || DEFAULT_GEMINI_MODEL;
-      const url = `${geminiApiUrl}${model}:generateContent?key=${this.apiKey}`;
-
-      const payload = {
-            system_instruction: {
-                parts: [{ text: systemPrompt }]
-            },
-            contents: [
-               {
-                  parts: userParts,
-               },
-            ],
-      };
-
-      console.log("SENDING TO GEMINI:", JSON.stringify(payload, null, 2));
-
-      const response = await fetch(url, {
-         method: "POST",
-         headers: {
-            "Content-Type": "application/json",
-         },
-         body: JSON.stringify(payload),
-      });
-
-      const responseData = await response.json();
-
-      if (!response.ok) {
-         console.error(`Gemini API Error:`, JSON.stringify(responseData, null, 2));
-         throw new HttpError(response.status, "GEMINI_API_ERROR", "Assistant failed to process the request.");
-      }
-
-      const text = responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
-      console.log("RAW RESPONSE FROM GEMINI:", text);
-      return parseStudyQuestionReply(text);
+      const response = await this.request(systemPrompt, { question: questionText, history });
+      return parseStudyQuestionReply(response);
    }
 
    async generateQuiz(
       quizTopic: string,
       questionCount: number,
+      attachments?: Array<{ name: string; type: string; extractedText?: string }>,
    ): Promise<GeneratedQuiz> {
-      const systemPrompt = `
+      let systemPrompt = `
 You are a quiz generator.
 
 Return ONLY valid JSON using this exact format:
@@ -351,6 +336,15 @@ Rules:
 - No markdown
 - No explanations
 `;
+
+      if (attachments && attachments.length > 0) {
+          systemPrompt += `
+CONTEXT PROVIDED FROM ATTACHMENTS:
+- You MUST use the following extracted text to generate the quiz content:
+${attachments.map(a => `\n--- CONTENT FROM ${a.name} ---
+${a.extractedText || "[No text content extracted]"}`).join('\n')}
+`;
+      }
 
       const responseText = await this.request(systemPrompt, {
          topic: quizTopic,
