@@ -39,33 +39,27 @@ export async function attachmentRoutes(app: FastifyInstance) {
      */
     app.post("/attachments/upload", async (request, reply) => {
         const user = await app.requireUser(request);
-        
-        // request.file() is provided by @fastify/multipart
+
         const data = await request.file();
         if (!data) {
             throw new HttpError(400, "NO_FILE", "No file uploaded");
         }
 
-        // Validate allowed file types
         if (!ALLOWED_MIME_TYPES.includes(data.mimetype)) {
             throw new HttpError(400, "INVALID_MIME_TYPE", `File type ${data.mimetype} not allowed`);
         }
 
         const buffer = await data.toBuffer();
-        
-        // Security: Prevent extremely large files that pass through basic checks
+
         if (buffer.length > MAX_FILE_SIZE) {
             throw new HttpError(400, "FILE_TOO_LARGE", "Maximum file size is 10MB");
         }
 
-        // Security: Sanitize filename to prevent path traversal or dangerous characters
         const originalName = data.filename;
         const sanitizedName = originalName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-        
-        // Store the file and get its public URL
+
         const fileUrl = await storage.uploadFile(buffer, sanitizedName, data.mimetype);
 
-        // Metadata returned to frontend to be saved when the message is sent
         return {
             url: fileUrl,
             originalName,
