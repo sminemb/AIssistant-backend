@@ -125,29 +125,15 @@ export async function conversationRoutes(app: FastifyInstance) {
         return reply.status(200).send({ messages: [assistantMessage] });
     }
 
-    // Append 'Take Quiz Now' if not present to trigger the frontend button. 
-    // Now expecting format: "Take Quiz Now: X questions"
-    let finalContent = replyData.content;
-    if (!finalContent.toLowerCase().includes("take quiz now")) {
-       finalContent += "\n\nWould you like to test your knowledge? Take Quiz Now!";
-    }
-
     // 4. Save assistant message
     const assistantMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         role: "assistant",
-        content: finalContent,
+        content: replyData.content,
       },
     });
 
-    // Extract count if present in the form "Take Quiz Now: X"
-    const countMatch = finalContent.match(/take quiz now:?\s*(\d+)/i);
-    const quizQuestionCount = countMatch ? parseInt(countMatch[1]) : 5;
-
-    return reply.status(201).send({ 
-        messages: [assistantMessage],
-        meta: { suggestedQuizCount: quizQuestionCount } 
-    });
+    return reply.status(201).send({ messages: [assistantMessage] });
   });
 }

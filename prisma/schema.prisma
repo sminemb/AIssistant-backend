@@ -29,7 +29,7 @@ model Session {
   expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
   createdAt DateTime  @default(now()) @map("created_at")
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([userId])
   @@index([expiresAt])
@@ -41,25 +41,28 @@ model StudyQuestion {
   questionText    String   @map("question_text")
   chatbotResponse String   @map("chatbot_response")
   createdAt       DateTime @default(now()) @map("created_at")
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([userId])
   @@index([userId, createdAt])
 }
 
 model Quiz {
-  id        Int            @id @default(autoincrement()) @map("quiz_id")
-  userId    Int            @map("user_id")
-  quizTopic String         @map("quiz_topic") @db.VarChar(200)
-  score     Float?
-  state     QuizState      @default(GENERATED)
-  createdAt DateTime       @default(now()) @map("created_at")
-  updatedAt DateTime       @updatedAt @map("updated_at")
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  answers   QuizAnswer[]
-  questions QuizQuestion[]
+  id             Int            @id @default(autoincrement()) @map("quiz_id")
+  userId         Int            @map("user_id")
+  conversationId Int?           @map("conversation_id")
+  quizTopic      String         @map("quiz_topic") @db.VarChar(200)
+  score          Float?
+  state          QuizState      @default(GENERATED)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  conversation   Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  answers        QuizAnswer[]
+  questions      QuizQuestion[]
 
   @@index([userId])
+  @@index([conversationId])
   @@index([userId, state])
   @@index([userId, quizTopic])
 }
@@ -71,7 +74,7 @@ model QuizQuestion {
   position     Int
   answer       QuizAnswer?
   options      QuizOption[]
-  quiz         Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quiz         Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([quizId, position])
   @@index([quizId])
@@ -84,7 +87,7 @@ model QuizOption {
   position        Int
   isCorrect       Boolean      @map("is_correct")
   selectedAnswers QuizAnswer[]
-  question        QuizQuestion @relation(fields: [quizQuestionId], references: [id], onDelete: Cascade)
+  question        QuizQuestion @relation(fields: [quizQuestionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([quizQuestionId, position])
   @@index([quizQuestionId])
@@ -97,9 +100,9 @@ model QuizAnswer {
   selectedOptionId Int          @map("selected_option_id")
   isCorrect        Boolean      @map("is_correct")
   createdAt        DateTime     @default(now()) @map("created_at")
-  quiz             Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  quizQuestion     QuizQuestion @relation(fields: [quizQuestionId], references: [id], onDelete: Cascade)
-  selectedOption   QuizOption   @relation(fields: [selectedOptionId], references: [id])
+  quiz             Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quizQuestion     QuizQuestion @relation(fields: [quizQuestionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  selectedOption   QuizOption   @relation(fields: [selectedOptionId], references: [id], onUpdate: NoAction)
 
   @@index([quizId])
   @@index([selectedOptionId])
@@ -112,7 +115,7 @@ model StudyProgress {
   totalQuizzes    Int      @default(0) @map("total_quizzes")
   averageScore    Float    @default(0) @map("average_score")
   updatedAt       DateTime @updatedAt @map("updated_at")
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model Conversation {
@@ -121,8 +124,9 @@ model Conversation {
   title     String    @db.VarChar(200)
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   messages  Message[]
+  quizzes   Quiz[]
 
   @@index([userId])
 }
@@ -133,7 +137,7 @@ model SystemLog {
   action    String   @db.VarChar(100)
   details   Json?
   createdAt DateTime @default(now()) @map("created_at")
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id], onUpdate: NoAction)
 
   @@index([userId])
   @@index([createdAt])
@@ -145,7 +149,7 @@ model Message {
   role           String       @db.VarChar(20)
   content        String
   createdAt      DateTime     @default(now()) @map("created_at")
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([conversationId])
 }

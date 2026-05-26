@@ -12,6 +12,7 @@ const quizParamsSchema = z.object({ quizId: z.coerce.number().int().positive() }
 const createQuizSchema = z.object({
   quizTopic: z.string().trim().min(1).max(200),
   questionCount: z.union([z.number().int().min(1).max(10), z.string().transform(Number)]).optional().default(5),
+  conversationId: z.number().int().positive().optional().nullable(),
 });
 
 const submitQuizSchema = z.object({
@@ -29,11 +30,11 @@ const submitQuizSchema = z.object({
 type QuizWithQuestions = Quiz & {
   questions: Array<QuizQuestion & { options: QuizOption[]; answer: QuizAnswer | null }>;
 };
-
 function quizDto(quiz: QuizWithQuestions, includeCorrectness: boolean) {
   return {
     id: quiz.id,
     userId: quiz.userId,
+    conversationId: quiz.conversationId,
     quizTopic: quiz.quizTopic,
     score: quiz.score,
     state: quiz.state,
@@ -86,12 +87,18 @@ async function refreshStudyProgress(tx: Prisma.TransactionClient, userId: number
     where: { userId, state: "COMPLETED", score: { not: null } },
     select: { quizTopic: true, score: true },
   });
+  
+  // Calculate highest score per unique topic
+  const highestScoresByTopic = new Map<string, number>();
+  for (const quiz of completedQuizzes) {
+    const currentMax = highestScoresByTopic.get(quiz.quizTopic.toLowerCase()) ?? 0;
+    highestScoresByTopic.set(quiz.quizTopic.toLowerCase(), Math.max(currentMax, quiz.score ?? 0));
+  }
+
   const totalQuizzes = completedQuizzes.length;
-  const completedTopics = new Set(completedQuizzes.map((quiz) => quiz.quizTopic.toLowerCase())).size;
-  const averageScore =
-    totalQuizzes === 0
-      ? 0
-      : completedQuizzes.reduce((total, quiz) => total + (quiz.score ?? 0), 0) / totalQuizzes;
+  const completedTopics = highestScoresByTopic.size;
+  const scores = Array.from(highestScoresByTopic.values());
+  const averageScore = scores.length === 0 ? 0 : scores.reduce((a, b) => a + b, 0) / scores.length;
 
   return tx.studyProgress.upsert({
     where: { userId },
@@ -117,10 +124,17 @@ export async function quizzesRoutes(app: FastifyInstance) {
     const assistantProvider = createAssistantProvider(app.config);
     const generatedQuiz = await assistantProvider.generateQuiz(body.quizTopic, body.questionCount);
 
+    // Shorten topic to 1-4 words, professional placeholder if too generic/short
+    const words = body.quizTopic.split(/\s+/);
+    const shortTopic = words.slice(0, 4).join(" ");
+    const isGenericTopic = body.quizTopic.toLowerCase() === "general study topic" || body.quizTopic.length < 3;
+    const finalTopic = isGenericTopic ? "Topic Assessment" : shortTopic;
+
     const quiz = await prisma.quiz.create({
       data: {
         userId: user.id,
-        quizTopic: body.quizTopic,
+        conversationId: body.conversationId,
+        quizTopic: finalTopic,
         questions: {
           create: generatedQuiz.questions.map((question, questionIndex) => ({
             questionText: question.questionText,

@@ -142,6 +142,7 @@ export class GeminiAssistantProvider implements AssistantProvider {
          for (const model of this.modelsToTry) {
             try {
                console.log(`Trying Gemini model: ${model} (Attempt ${attempt + 1})`);
+               console.log('Sending prompt to model:', systemPrompt);
 
                const url = `${geminiApiUrl}${model}:generateContent?key=${this.apiKey}`;
 
@@ -232,11 +233,29 @@ export class GeminiAssistantProvider implements AssistantProvider {
       const systemPrompt = `
 You are a helpful AI study assistant.
 
-Provide concise and accurate educational answers.
-
-CRITICAL RULE: If the user asks to create or start a quiz, provide a brief, encouraging introduction or high-level summary of the topic, but DO NOT list the questions or give away the answers in your response. 
-
-If you recommend a quiz, you may suggest a number of questions by saying "Take Quiz Now: X" (where X is your suggested number). This will help the user get started quickly. The actual quiz will be generated separately.
+CRITICAL RULES:
+1. Behave as a natural conversational chatbot by default.
+2. Provide direct, concise, and context-aware answers to the user.
+3. Quizzes should be OPTIONAL and only suggested occasionally when contextually relevant — never after every response.
+4. Do NOT repeatedly ask users to take quizzes or test their knowledge.
+5. Avoid repetitive phrases such as:
+   - "Would you like a quiz?"
+   - "Test your knowledge"
+   - "Take a quiz"
+   - "Practice questions"
+6. Only trigger quiz generation when:
+   - The user explicitly asks for a quiz, test, practice test, reviewer, assessment, flashcards, or multiple-choice questions.
+   - OR you determine a quiz is highly contextually appropriate after substantial educational discussion.
+7. When quiz generation is triggered:
+   - Internally append the hidden tag: [[GENERATE_QUIZ]]
+   - Do NOT expose or mention the tag to the user.
+8. The visible response should remain natural and conversational.
+9. Instead of exposing the trigger tag, provide:
+   - A brief summary of the discussed topic
+   - A short transition sentence introducing the quiz naturally
+10. Never display raw system tags, internal commands, or trigger syntax to the user.
+11. Never generate quiz questions directly unless the quiz generation system handles them separately.
+12. Maintain smooth conversational flow and avoid making the chatbot feel automated or repetitive.
 `;
 
       const responseText = await this.request(systemPrompt, {
