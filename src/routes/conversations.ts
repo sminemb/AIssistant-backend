@@ -9,7 +9,13 @@ const createConversationSchema = z.object({
 });
 
 const createMessageSchema = z.object({
-  content: z.string().trim().min(1),
+  content: z.string().trim().min(0),
+  searchMode: z.boolean().optional(),
+  attachments: z.array(z.object({
+      name: z.string(),
+      type: z.string(),
+      url: z.string().optional(),
+  })).optional(),
 });
 
 const conversationParamsSchema = z.object({
@@ -70,6 +76,7 @@ export async function conversationRoutes(app: FastifyInstance) {
 
     return prisma.message.findMany({
       where: { conversationId: params.id, conversation: { userId: user.id } },
+      include: { attachments: true },
       orderBy: { createdAt: "asc" },
     });
   });
@@ -85,33 +92,52 @@ export async function conversationRoutes(app: FastifyInstance) {
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
 
-    // 1. Save user message and update conversation's updatedAt
-    await prisma.$transaction([
-      prisma.message.create({
+    // 1. Save user message (metadata only) and update conversation's updatedAt
+    const userMessage = await prisma.$transaction(async (tx) => {
+      const msg = await tx.message.create({
         data: {
           conversationId: conversation.id,
           role: "user",
           content: body.content,
         },
-      }),
-      prisma.conversation.update({
+      });
+
+      if (body.attachments && body.attachments.length > 0) {
+        await tx.attachment.createMany({
+          data: body.attachments.map((att: any) => ({
+            messageId: msg.id,
+            userId: user.id,
+            originalName: att.name,
+            fileUrl: att.url || "",
+            mimeType: att.type,
+            size: att.size || 0,
+          })),
+        });
+      }
+
+      await tx.conversation.update({
         where: { id: conversation.id },
         data: { 
             updatedAt: new Date(),
-            title: conversation.title === "New Chat" ? body.content.substring(0, 50) : conversation.title 
+            title: conversation.title === "New Chat" ? (body.content.substring(0, 50) || (body.attachments?.[0]?.name ?? "New Chat")) : conversation.title 
         },
-      }),
-    ]);
+      });
+
+      return tx.message.findUnique({
+          where: { id: msg.id },
+          include: { attachments: true }
+      });
+    });
 
     // 2. Prepare history for Assistant (last 10 messages)
     const history = conversation.messages.map(m => ({ role: m.role, content: m.content }));
 
-    // 3. Call Assistant
+    // 3. Call Assistant (pass full attachments with data if they have scanning data)
     const assistantProvider = createAssistantProvider(app.config);
     let replyData: Awaited<ReturnType<typeof assistantProvider.answerStudyQuestion>>;
     
     try {
-        replyData = await assistantProvider.answerStudyQuestion(body.content, history);
+        replyData = await assistantProvider.answerStudyQuestion(body.content, history, body.searchMode, body.attachments);
     } catch (error: any) {
         console.error("Assistant request failed:", error);
         const errorMessage = "I'm having trouble connecting to my study brain right now. Please try again in a little while.";
@@ -121,6 +147,7 @@ export async function conversationRoutes(app: FastifyInstance) {
                 role: "assistant",
                 content: errorMessage,
             },
+            include: { attachments: true }
         });
         return reply.status(200).send({ messages: [assistantMessage] });
     }
@@ -132,6 +159,7 @@ export async function conversationRoutes(app: FastifyInstance) {
         role: "assistant",
         content: replyData.content,
       },
+      include: { attachments: true }
     });
 
     return reply.status(201).send({ messages: [assistantMessage] });

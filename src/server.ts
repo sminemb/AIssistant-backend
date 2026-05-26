@@ -15,6 +15,9 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { quizzesRoutes } from "./routes/quizzes.js";
 import { studyProgressRoutes } from "./routes/study-progress.js";
 import { studyQuestionsRoutes } from "./routes/study-questions.js";
+import { attachmentRoutes } from "./routes/attachments.js";
+import path from "path";
+import fastifyStatic from "@fastify/static";
 
 export async function buildServer(env: AppEnv) {
   const app = Fastify({ logger: env.NODE_ENV !== "test" });
@@ -22,7 +25,15 @@ export async function buildServer(env: AppEnv) {
 
   app.decorate("config", env);
 
-  await app.register(helmet);
+  await app.register(helmet, {
+    contentSecurityPolicy: false, // Disable for easier dev/local assets
+  });
+
+  // Serve static files from uploads
+  await app.register(fastifyStatic, {
+    root: path.join(process.cwd(), "uploads"),
+    prefix: "/uploads/",
+  });
   await app.register(cors, {
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -75,6 +86,7 @@ export async function buildServer(env: AppEnv) {
   await app.register(studyQuestionsRoutes);
   await app.register(quizzesRoutes);
   await app.register(studyProgressRoutes);
+  await app.register(attachmentRoutes);
 
   app.addHook("onClose", async () => {
     await prisma.$disconnect();

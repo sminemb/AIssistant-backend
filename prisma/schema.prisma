@@ -20,6 +20,7 @@ model User {
   studyProgress  StudyProgress?
   studyQuestions StudyQuestion[]
   systemLogs     SystemLog[]
+  attachments    Attachment[]
 }
 
 model Session {
@@ -143,6 +144,23 @@ model SystemLog {
   @@index([createdAt])
 }
 
+model Attachment {
+  id               String   @id @default(uuid()) @map("attachment_id")
+  messageId        Int      @map("message_id")
+  userId           Int      @map("user_id")
+  originalName     String   @map("original_name")
+  fileUrl          String   @map("file_url")
+  mimeType         String   @map("mime_type")
+  size             Int
+  createdAt        DateTime @default(now()) @map("created_at")
+  
+  message          Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user             User     @relation(fields: [userId], references: [id])
+
+  @@index([messageId])
+  @@index([userId])
+}
+
 model Message {
   id             Int          @id @default(autoincrement()) @map("message_id")
   conversationId Int          @map("conversation_id")
@@ -150,6 +168,7 @@ model Message {
   content        String
   createdAt      DateTime     @default(now()) @map("created_at")
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attachments    Attachment[]
 
   @@index([conversationId])
 }

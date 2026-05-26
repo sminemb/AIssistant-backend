@@ -27,6 +27,8 @@ export interface AssistantProvider {
    answerStudyQuestion(
       questionText: string,
       history?: Array<{ role: string; content: string }>,
+      searchMode?: boolean,
+      attachments?: Array<{ name: string; type: string }>,
    ): Promise<StudyQuestionReply>;
 
    generateQuiz(
@@ -229,8 +231,10 @@ export class GeminiAssistantProvider implements AssistantProvider {
    async answerStudyQuestion(
       questionText: string,
       history: Array<{ role: string; content: string }> = [],
+      searchMode: boolean = false,
+      attachments?: Array<{ name: string; type: string; data?: string }>,
    ): Promise<StudyQuestionReply> {
-      const systemPrompt = `
+      let systemPrompt = `
 You are a helpful AI study assistant.
 
 CRITICAL RULES:
@@ -246,24 +250,92 @@ CRITICAL RULES:
 6. Only trigger quiz generation when:
    - The user explicitly asks for a quiz, test, practice test, reviewer, assessment, flashcards, or multiple-choice questions.
    - OR you determine a quiz is highly contextually appropriate after substantial educational discussion.
-7. When quiz generation is triggered:
-   - Internally append the hidden tag: [[GENERATE_QUIZ]]
-   - Do NOT expose or mention the tag to the user.
+7. When quiz generation is triggered, you MUST append the hidden tag [[GENERATE_QUIZ]] to the end of your response.
+   - Example: "Here is your quiz! [[GENERATE_QUIZ]]"
+   - You MUST ensure the tag is present whenever you discuss or initiate a quiz.
 8. The visible response should remain natural and conversational.
-9. Instead of exposing the trigger tag, provide:
-   - A brief summary of the discussed topic
-   - A short transition sentence introducing the quiz naturally
-10. Never display raw system tags, internal commands, or trigger syntax to the user.
+9. To introduce the quiz, provide a brief summary and a transition sentence, then end with the hidden tag: [[GENERATE_QUIZ]]
+10. Never display raw system tags, internal commands, or trigger syntax to the user, except for the hidden [[GENERATE_QUIZ]] tag at the end.
 11. Never generate quiz questions directly unless the quiz generation system handles them separately.
 12. Maintain smooth conversational flow and avoid making the chatbot feel automated or repetitive.
+13. If the user has explicitly requested a quiz and a topic is clear, do NOT ask for more details. Proceed directly to generating the quiz using the hidden tag [[GENERATE_QUIZ]].
+14. ALWAYS return your response as a JSON object in this exact format: { "content": "your conversational response here" }
 `;
 
-      const responseText = await this.request(systemPrompt, {
-         question: questionText,
-         history,
+      if (searchMode) {
+         systemPrompt += `
+SEARCH MODE ACTIVE:
+- Actively use your internal knowledge as if you are searching the web for the latest, most accurate information.
+- Prioritize real-world facts, recent developments, and verified data.
+- If the user asks about current events or specific details that require search-like precision, prioritize those.
+`;
+      }
+
+      if (attachments && attachments.length > 0) {
+          systemPrompt += `
+ATTACHMENTS PROVIDED:
+I have provided ${attachments.length} attachment(s) for you to analyze. 
+- You MUST scan the content of these files to answer the user's questions.
+- If you see images, analyze their visual details. 
+- If you see PDFs or text files, read their textual content thoroughly.
+- Do not just acknowledge the filenames; integrate their actual information into your study guidance.
+`;
+      }
+
+      const userParts: any[] = [
+          {
+              text: `User request:\n${JSON.stringify({ question: questionText, history })}`,
+          }
+      ];
+
+      if (attachments && attachments.length > 0) {
+          for (const attachment of attachments) {
+              if (attachment.data) {
+                  userParts.push({
+                      inline_data: {
+                          mime_type: attachment.type,
+                          data: attachment.data
+                      }
+                  });
+              }
+          }
+      }
+
+      const geminiApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/";
+      const model = this.modelsToTry[0] || DEFAULT_GEMINI_MODEL;
+      const url = `${geminiApiUrl}${model}:generateContent?key=${this.apiKey}`;
+
+      const payload = {
+            system_instruction: {
+                parts: [{ text: systemPrompt }]
+            },
+            contents: [
+               {
+                  parts: userParts,
+               },
+            ],
+      };
+
+      console.log("SENDING TO GEMINI:", JSON.stringify(payload, null, 2));
+
+      const response = await fetch(url, {
+         method: "POST",
+         headers: {
+            "Content-Type": "application/json",
+         },
+         body: JSON.stringify(payload),
       });
 
-      return parseStudyQuestionReply(responseText);
+      const responseData = await response.json();
+
+      if (!response.ok) {
+         console.error(`Gemini API Error:`, JSON.stringify(responseData, null, 2));
+         throw new HttpError(response.status, "GEMINI_API_ERROR", "Assistant failed to process the request.");
+      }
+
+      const text = responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
+      console.log("RAW RESPONSE FROM GEMINI:", text);
+      return parseStudyQuestionReply(text);
    }
 
    async generateQuiz(
