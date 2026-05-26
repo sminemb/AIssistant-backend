@@ -8,8 +8,11 @@ export async function studyProgressRoutes(app: FastifyInstance) {
     // Fetch all completed quizzes for this user
     const completedQuizzes = await prisma.quiz.findMany({
       where: { userId: user.id, state: "COMPLETED", score: { not: null } },
-      select: { quizTopic: true, score: true },
+      select: { quizTopic: true, score: true, createdAt: true },
     });
+
+    // Calculate unique days active
+    const activeDays = new Set(completedQuizzes.map(q => q.createdAt.toDateString())).size;
 
     // Calculate metrics
     const highestScoresByTopic = new Map<string, number>();
@@ -30,10 +33,33 @@ export async function studyProgressRoutes(app: FastifyInstance) {
       create: { userId: user.id, completedTopics, totalQuizzes, averageScore },
     });
 
+    // Generate insights
+    const insights: string[] = [];
+    if (completedQuizzes.length > 0) {
+        const sortedTopics = Array.from(highestScoresByTopic.entries()).sort((a, b) => b[1] - a[1]);
+        
+        // Filter out topics with 100% mastery
+        const needsReview = sortedTopics.filter(([, score]) => score < 100);
+        const mastered = sortedTopics.filter(([, score]) => score === 100);
+
+        if (mastered.length > 0) {
+             insights.push(`You have completely mastered ${mastered.length > 1 ? 'topics like ' : ''}${mastered.map(t => t[0]).join(', ')}.`);
+        }
+
+        if (needsReview.length > 0) {
+            const worst = needsReview[needsReview.length - 1];
+            insights.push(`Consider reviewing ${worst[0]}, your current lowest score is ${Math.round(worst[1])}%.`);
+        } else if (mastered.length > 0) {
+            insights.push("You've mastered everything! Time for a break or a new challenge.");
+        }
+    } else {
+        insights.push("Start taking quizzes to see your study insights!");
+    }
+
     // Return the progress with extra topic-specific data for the UI
-    return { 
-        studyProgress,
-        topicBreakdown: Object.fromEntries(highestScoresByTopic)
-    };
-  });
+    return {
+        studyProgress: { ...studyProgress, activeDays },
+        topicBreakdown: Object.fromEntries(highestScoresByTopic),
+        insights
+    };  });
 }

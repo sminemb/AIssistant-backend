@@ -1,9 +1,11 @@
+import fs from "fs/promises";
 import type { FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
 import { prisma } from "../db/prisma.js";
 import { LocalStorageService } from "../services/storage.js";
 import { HttpError } from "../assistant/provider.js";
 import path from "path";
+import { extractTextFromFile } from "../services/text-extractor.js";
 
 const ALLOWED_MIME_TYPES = [
     "image/jpeg",
@@ -12,7 +14,11 @@ const ALLOWED_MIME_TYPES = [
     "image/gif",
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+    "application/msword", // .doc
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+    "application/vnd.ms-excel", // .xls
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+    "application/vnd.ms-powerpoint", // .ppt
     "text/plain",
     "audio/mpeg",
     "video/mp4",
@@ -33,9 +39,31 @@ export async function attachmentRoutes(app: FastifyInstance) {
     await storage.init();
 
     /**
+     * GET /uploads/:filename
+     * Serves uploaded files with appropriate security and CORS headers.
+     */
+    app.get("/uploads/:filename", async (request, reply) => {
+        const { filename } = request.params as { filename: string };
+        const filePath = path.join(process.cwd(), "uploads", filename);
+
+        // Security: Prevent directory traversal
+        if (filename.includes("..") || filename.startsWith("/")) {
+            throw new HttpError(403, "FORBIDDEN", "Invalid file path");
+        }
+
+        try {
+            const file = await fs.readFile(filePath);
+            return reply
+                .header("Content-Type", "application/octet-stream")
+                .header("Access-Control-Allow-Origin", process.env.FRONTEND_URL || "http://localhost:3000")
+                .send(file);
+        } catch (error) {
+            throw new HttpError(404, "NOT_FOUND", "File not found");
+        }
+    });
+
+    /**
      * POST /attachments/upload
-     * Securely handles file uploads, validates size and MIME type,
-     * and stores the file in the configured storage service.
      */
     app.post("/attachments/upload", async (request, reply) => {
         const user = await app.requireUser(request);
@@ -60,11 +88,15 @@ export async function attachmentRoutes(app: FastifyInstance) {
 
         const fileUrl = await storage.uploadFile(buffer, sanitizedName, data.mimetype);
 
+        // Extract text for AI scanning
+        const extractedText = await extractTextFromFile(buffer, data.mimetype);
+
         return {
             url: fileUrl,
             originalName,
             mimeType: data.mimetype,
             size: buffer.length,
+            extractedText
         };
     });
 }

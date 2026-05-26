@@ -13,6 +13,7 @@ const createQuizSchema = z.object({
   quizTopic: z.string().trim().min(1).max(200),
   questionCount: z.union([z.number().int().min(1).max(10), z.string().transform(Number)]).optional().default(5),
   conversationId: z.number().int().positive().optional().nullable(),
+  difficulty: z.enum(['easy', 'medium', 'hard']).optional().default('medium'),
 });
 
 const submitQuizSchema = z.object({
@@ -164,6 +165,30 @@ export async function quizzesRoutes(app: FastifyInstance) {
     });
     
     return { success: true };
+  });
+
+  app.post("/quizzes/:quizId/reset", async (request, reply) => {
+    const user = await app.requireUser(request);
+    const params = parseParams(request, quizParamsSchema);
+
+    const resetQuiz = await prisma.$transaction(async (tx) => {
+      // Ensure the quiz exists and belongs to the user
+      const quiz = await findOwnedQuiz(user.id, params.quizId, tx);
+
+      // Delete all existing answers for this quiz
+      await tx.quizAnswer.deleteMany({
+        where: { quizId: quiz.id },
+      });
+
+      // Update quiz state back to GENERATED and clear score
+      return await tx.quiz.update({
+        where: { id: quiz.id },
+        data: { state: "GENERATED", score: null },
+        include: { questions: { include: { options: true, answer: true } } },
+      });
+    });
+
+    return reply.status(200).send({ quiz: quizDto(resetQuiz, false) });
   });
 
   app.get("/quizzes/:quizId", async (request) => {

@@ -254,7 +254,7 @@ CRITICAL RULES:
    - Example: "Here is your quiz! [[GENERATE_QUIZ]]"
    - You MUST ensure the tag is present whenever you discuss or initiate a quiz.
 8. The visible response should remain natural and conversational.
-9. To introduce the quiz, provide a brief summary and a transition sentence, then end with the hidden tag: [[GENERATE_QUIZ]]
+9. To introduce the quiz, provide a brief summary of the topic or a short, encouraging "breather" context that helps the user feel prepared. End this introduction with the hidden tag: [[GENERATE_QUIZ]]
 10. Never display raw system tags, internal commands, or trigger syntax to the user, except for the hidden [[GENERATE_QUIZ]] tag at the end.
 11. Never generate quiz questions directly unless the quiz generation system handles them separately.
 12. Maintain smooth conversational flow and avoid making the chatbot feel automated or repetitive.
@@ -271,17 +271,6 @@ SEARCH MODE ACTIVE:
 `;
       }
 
-      if (attachments && attachments.length > 0) {
-          systemPrompt += `
-ATTACHMENTS PROVIDED:
-I have provided ${attachments.length} attachment(s) for you to analyze. 
-- You MUST scan the content of these files to answer the user's questions.
-- If you see images, analyze their visual details. 
-- If you see PDFs or text files, read their textual content thoroughly.
-- Do not just acknowledge the filenames; integrate their actual information into your study guidance.
-`;
-      }
-
       const userParts: any[] = [
           {
               text: `User request:\n${JSON.stringify({ question: questionText, history })}`,
@@ -289,16 +278,14 @@ I have provided ${attachments.length} attachment(s) for you to analyze.
       ];
 
       if (attachments && attachments.length > 0) {
-          for (const attachment of attachments) {
-              if (attachment.data) {
-                  userParts.push({
-                      inline_data: {
-                          mime_type: attachment.type,
-                          data: attachment.data
-                      }
-                  });
-              }
-          }
+          systemPrompt += `
+ATTACHMENTS PROVIDED:
+I have provided ${attachments.length} attachment(s) for you to analyze.
+- You MUST scan the content of these files to answer the user's questions.
+- I have extracted the following text content for you:
+${attachments.map(a => `\n--- CONTENT FROM ${a.name} ---\n${a.extractedText || "[No text content extracted]"}`).join('\n')}
+- PROACTIVE ACTION: After providing a brief summary of the file content, you MUST proactively offer to create a quiz based on the material in the file to help the user test their understanding. Include the hidden trigger tag [[GENERATE_QUIZ]] at the end if you offer the quiz.
+`;
       }
 
       const geminiApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/";

@@ -15,6 +15,8 @@ const createMessageSchema = z.object({
       name: z.string(),
       type: z.string(),
       url: z.string().optional(),
+      size: z.number().optional(),
+      extractedText: z.string().optional(),
   })).optional(),
 });
 
@@ -134,10 +136,18 @@ export async function conversationRoutes(app: FastifyInstance) {
 
     // 3. Call Assistant (pass full attachments with data if they have scanning data)
     const assistantProvider = createAssistantProvider(app.config);
+    
+    // Explicitly pass attachments with extractedText
+    const attachmentsForAI = body.attachments?.map((att: any) => ({
+        name: att.name,
+        type: att.type,
+        extractedText: att.extractedText
+    }));
+
     let replyData: Awaited<ReturnType<typeof assistantProvider.answerStudyQuestion>>;
     
     try {
-        replyData = await assistantProvider.answerStudyQuestion(body.content, history, body.searchMode, body.attachments);
+        replyData = await assistantProvider.answerStudyQuestion(body.content, history, body.searchMode, attachmentsForAI as any);
     } catch (error: any) {
         console.error("Assistant request failed:", error);
         const errorMessage = "I'm having trouble connecting to my study brain right now. Please try again in a little while.";

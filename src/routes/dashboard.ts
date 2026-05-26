@@ -23,11 +23,25 @@ export async function dashboardRoutes(app: FastifyInstance) {
       }),
     ]);
 
-    // Simple placeholder for recommendations
-    const recommendations = [
-      { topic: "Quantum Mechanics", questions: 12 },
-      { topic: "Organic Chemistry", questions: 8 },
-    ];
+    // Calculate recommendations based on low scores
+    const allCompletedQuizzes = await prisma.quiz.findMany({
+      where: { userId: user.id, state: "COMPLETED", score: { not: null } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const topicScores = new Map<string, { totalScore: number; count: number }>();
+    for (const quiz of allCompletedQuizzes) {
+        const stats = topicScores.get(quiz.quizTopic) || { totalScore: 0, count: 0 };
+        stats.totalScore += quiz.score || 0;
+        stats.count += 1;
+        topicScores.set(quiz.quizTopic, stats);
+    }
+
+    const recommendations = Array.from(topicScores.entries())
+        .map(([topic, stats]) => ({ topic, avgScore: stats.totalScore / stats.count }))
+        .sort((a, b) => a.avgScore - b.avgScore) // Lowest score first
+        .slice(0, 3)
+        .map(r => ({ topic: r.topic, questions: 5 })); // Placeholder question count
 
     return {
       recentConversations,

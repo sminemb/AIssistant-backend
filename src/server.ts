@@ -20,7 +20,10 @@ import path from "path";
 import fastifyStatic from "@fastify/static";
 
 export async function buildServer(env: AppEnv) {
-  const app = Fastify({ logger: env.NODE_ENV !== "test" });
+  const app = Fastify({ 
+      logger: env.NODE_ENV !== "test",
+      bodyLimit: 15 * 1024 * 1024 // 15MB limit
+  });
   const allowedOrigins = frontendOrigins(env);
 
   app.decorate("config", env);
@@ -29,23 +32,19 @@ export async function buildServer(env: AppEnv) {
     contentSecurityPolicy: false, // Disable for easier dev/local assets
   });
 
-  // Serve static files from uploads
-  await app.register(fastifyStatic, {
-    root: path.join(process.cwd(), "uploads"),
-    prefix: "/uploads/",
-  });
+  // Serve static files via authenticated route
+  app.register(attachmentRoutes);
+
   await app.register(cors, {
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
-    origin(origin, callback) {
+    origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
         return;
       }
-
-      callback(null, false);
+      callback(new Error("Not allowed by CORS"), false);
     },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    credentials: true,
   });
   await app.register(cookie, { secret: env.SESSION_SECRET });
   await app.register(rateLimit, {
@@ -86,7 +85,6 @@ export async function buildServer(env: AppEnv) {
   await app.register(studyQuestionsRoutes);
   await app.register(quizzesRoutes);
   await app.register(studyProgressRoutes);
-  await app.register(attachmentRoutes);
 
   app.addHook("onClose", async () => {
     await prisma.$disconnect();

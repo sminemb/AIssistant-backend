@@ -45,6 +45,14 @@ npm run prisma:migrate
 npm run dev
 ```
 
+### Local Development Uploads
+The `uploads/` directory is ignored by Git. If your local development requires file uploads, ensure you create the directory manually:
+
+```bash
+mkdir uploads
+```
+You can populate this directory with necessary test files as needed.
+
 The API runs on `PORT` from `.env`, defaulting to `4000`.
 
 ---
