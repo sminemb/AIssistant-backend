@@ -21,7 +21,7 @@ export async function extractTextFromFile(buffer: Buffer, mimeType: string): Pro
             return result.value || "[File detected as Word Doc, but no readable text found]";
         }
 
-        if (mimeType === "text/plain") {
+        if (mimeType.includes("text/") || mimeType === "application/json" || mimeType === "text/csv") {
             const text = buffer.toString("utf-8");
             console.log("DEBUG: Text extraction success, chars:", text.length);
             return text;

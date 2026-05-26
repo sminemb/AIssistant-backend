@@ -132,16 +132,19 @@ export async function conversationRoutes(app: FastifyInstance) {
     });
 
     // 2. Prepare history for Assistant (last 10 messages)
-    const history = conversation.messages.map(m => ({ role: m.role, content: m.content }));
+    const history = body.attachments && body.attachments.length > 0 
+        ? [] 
+        : conversation.messages.slice(-10).map(m => ({ role: m.role, content: m.content }));
 
     // 3. Call Assistant (pass full attachments with data if they have scanning data)
     const assistantProvider = createAssistantProvider(app.config);
     
-    // Explicitly pass attachments with extractedText
+    // Explicitly pass attachments with extractedText and URL
     const attachmentsForAI = body.attachments?.map((att: any) => ({
         name: att.name,
         type: att.type,
-        extractedText: att.extractedText
+        extractedText: att.extractedText,
+        url: att.url
     }));
 
     let replyData: Awaited<ReturnType<typeof assistantProvider.answerStudyQuestion>>;

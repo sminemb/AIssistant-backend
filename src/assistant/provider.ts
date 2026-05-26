@@ -133,7 +133,7 @@ export class GeminiAssistantProvider implements AssistantProvider {
 
    private async request(
       systemPrompt: string,
-      userContent: unknown,
+      payload: any,
       retryCount: number = 3,
    ): Promise<string> {
       const geminiApiUrl =
@@ -145,30 +145,21 @@ export class GeminiAssistantProvider implements AssistantProvider {
          for (const model of this.modelsToTry) {
             try {
                console.log(`Trying Gemini model: ${model} (Attempt ${attempt + 1})`);
-               console.log('Sending prompt to model:', systemPrompt);
 
                const url = `${geminiApiUrl}${model}:generateContent?key=${this.apiKey}`;
+
+               // Add system_instruction to payload if not already there
+               const body = {
+                   ...payload,
+                   system_instruction: { parts: [{ text: systemPrompt }] }
+               };
 
                const response = await this.fetchImpl(url, {
                   method: "POST",
                   headers: {
                      "Content-Type": "application/json",
                   },
-                  body: JSON.stringify({
-                     contents: [
-                        {
-                           parts: [
-                              {
-                                 text:
-                                    `${systemPrompt}\n\n` +
-                                    `User request:\n${JSON.stringify(
-                                       userContent,
-                                    )}`,
-                              },
-                           ],
-                        },
-                     ],
-                  }),
+                  body: JSON.stringify(body),
                });
 
                const responseData = await response.json();
@@ -181,12 +172,10 @@ export class GeminiAssistantProvider implements AssistantProvider {
 
                   lastError = responseData;
                   
-                  // Handle Quota Exceeded (429) explicitly
                   if (response.status === 429) {
-                     throw new HttpError(429, "QUOTA_EXCEEDED", "Daily request limit reached. Please try again tomorrow.");
+                     throw new HttpError(429, "QUOTA_EXCEEDED", "Daily request limit reached.");
                   }
 
-                  // Don't retry on other 400-level errors
                   if (response.status >= 400 && response.status < 500) {
                       throw new HttpError(response.status, "GEMINI_API_ERROR", JSON.stringify(responseData));
                   }
@@ -197,35 +186,23 @@ export class GeminiAssistantProvider implements AssistantProvider {
                   responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
 
                if (text) {
-                  console.log(`Success using Gemini model: ${model}`);
-
                   return text;
                }
-
-               console.warn(
-                  `Unexpected Gemini response structure for model ${model}`,
-               );
 
                lastError = responseData;
             } catch (error) {
                console.error(`Gemini request failed for model ${model}:`, error);
-
                lastError = error;
             }
          }
-         
-         // Wait before retrying (exponential backoff)
          const delay = Math.pow(2, attempt) * 1000;
-         console.log(`Retrying in ${delay}ms...`);
          await new Promise(resolve => setTimeout(resolve, delay));
       }
 
       throw new HttpError(
          502,
          "ASSISTANT_PROVIDER_FAILED",
-         `AI Study Assistant provider request failed after ${retryCount} attempts. ${String(
-            lastError,
-         )}`,
+         `AI Study Assistant provider request failed.`,
       );
    }
 
@@ -251,61 +228,46 @@ export class GeminiAssistantProvider implements AssistantProvider {
       questionText: string,
       history: Array<{ role: string; content: string }> = [],
       searchMode: boolean = false,
-      attachments?: Array<{ name: string; type: string; extractedText?: string }>,
+      attachments?: Array<{ name: string; type: string; extractedText?: string; url?: string }>,
    ): Promise<StudyQuestionReply> {
       let systemPrompt = `
 You are a helpful AI study assistant.
-
-CRITICAL RULES:
-1. Behave as a natural conversational chatbot by default.
-2. Provide direct, concise, and context-aware answers to the user.
-3. Quizzes should be OPTIONAL and only suggested occasionally when contextually relevant — never after every response.
-4. Do NOT repeatedly ask users to take quizzes or test their knowledge.
-5. Avoid repetitive phrases such as:
-   - "Would you like a quiz?"
-   - "Test your knowledge"
-   - "Take a quiz"
-   - "Practice questions"
-6. Only trigger quiz generation when:
-   - The user explicitly asks for a quiz, test, practice test, reviewer, assessment, flashcards, or multiple-choice questions.
-   - OR you determine a quiz is highly contextually appropriate after substantial educational discussion.
-7. When quiz generation is triggered, you MUST append the hidden tag [[GENERATE_QUIZ]] to the end of your response.
-   - Example: "Here is your quiz! [[GENERATE_QUIZ]]"
-   - You MUST ensure the tag is present whenever you discuss or initiate a quiz.
-8. The visible response should remain natural and conversational.
-9. To introduce the quiz, provide a brief summary of the topic or a short, encouraging "breather" context that helps the user feel prepared. End this introduction with the hidden tag: [[GENERATE_QUIZ]]
-10. Never display raw system tags, internal commands, or trigger syntax to the user, except for the hidden [[GENERATE_QUIZ]] tag at the end.
-11. Never generate quiz questions directly unless the quiz generation system handles them separately.
-12. Maintain smooth conversational flow and avoid making the chatbot feel automated or repetitive.
-13. If the user has explicitly requested a quiz and a topic is clear, do NOT ask for more details. Proceed directly to generating the quiz using the hidden tag [[GENERATE_QUIZ]].
-14. ALWAYS return your response as a JSON object in this exact format: { "content": "your conversational response here" }
+- Carefully analyze all attached files (documents, images, data sheets).
+- Answer questions accurately based ONLY on the details provided in the file.
+- If the user asks a question, answer using only verified facts from the attachments.
+- Keep responses concise, structured, and easy to read.
+- If the user's prompt is generic or empty, provide a clean, 3-bullet point summary of the file.
+- If quiz generation is contextually appropriate, append the hidden tag [[GENERATE_QUIZ]] at the end.
 `;
 
-      if (searchMode) {
-         systemPrompt += `
-SEARCH MODE ACTIVE:
-- Actively use your internal knowledge as if you are searching the web for the latest, most accurate information.
-- Prioritize real-world facts, recent developments, and verified data.
-- If the user asks about current events or specific details that require search-like precision, prioritize those.
-`;
-      }
+      const parts: any[] = [{ text: systemPrompt + `\n\nUser request: ${questionText}\nHistory: ${JSON.stringify(history)}` }];
 
       if (attachments && attachments.length > 0) {
-          systemPrompt += `
-ATTACHMENTS PROVIDED:
-I have provided ${attachments.length} new attachment(s) for you to analyze.
-- You MUST scan the content of these files to answer the user's questions.
-- IGNORE any previous file contexts or topics from earlier in this conversation. Focus ONLY on the content of these new attachments.
-${attachments.map(a => `
---- FILE: ${a.name} ---
-${this.getFileInstruction(a.name, a.type)}
---- CONTENT ---
-${a.extractedText || "[No text content extracted]"}`).join('\n')}
-- PROACTIVE ACTION: After providing a brief summary of the file content, you MUST proactively offer to create a quiz based on the material in the file to help the user test their understanding. Include the hidden trigger tag [[GENERATE_QUIZ]] at the end if you offer the quiz.
-`;
+         for (const att of attachments) {
+             if (att.url) {
+                try {
+                    // Fetch image from UploadThing URL
+                    const response = await fetch(att.url);
+                    const arrayBuffer = await response.arrayBuffer();
+                    const base64Data = Buffer.from(arrayBuffer).toString("base64");
+                    
+                    parts.push({
+                        inline_data: {
+                            mime_type: att.type,
+                            data: base64Data
+                        }
+                    });
+                } catch (e) {
+                    console.error("Failed to fetch image from UploadThing:", e);
+                    parts.push({ text: `\n--- FILE: ${att.name} ---\n[Failed to load image for analysis]` });
+                }
+             } else if (att.extractedText) {
+                parts.push({ text: `\n--- FILE: ${att.name} ---\n${att.extractedText}\n` });
+             }
+         }
       }
 
-      const response = await this.request(systemPrompt, { question: questionText, history });
+      const response = await this.request(systemPrompt, { contents: [{ parts }] });
       return parseStudyQuestionReply(response);
    }
 
