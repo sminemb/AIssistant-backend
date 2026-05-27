@@ -16,6 +16,7 @@ import { quizzesRoutes } from "./routes/quizzes.js";
 import { studyProgressRoutes } from "./routes/study-progress.js";
 import { studyQuestionsRoutes } from "./routes/study-questions.js";
 import { attachmentRoutes } from "./routes/attachments.js";
+import { configureCloudinary } from "./config/cloudinary.js";
 import path from "path";
 import fastifyStatic from "@fastify/static";
 
@@ -25,6 +26,8 @@ export async function buildServer(env: AppEnv) {
       bodyLimit: 15 * 1024 * 1024 // 15MB limit
   });
   const allowedOrigins = frontendOrigins(env);
+
+  configureCloudinary(env);
 
   app.decorate("config", env);
 

@@ -21,7 +21,7 @@ const MAX_RETRIES = 3;
 const MAX_ATTACHMENT_CHARS = 15000;
 const MAX_HISTORY_MESSAGES = 10;
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
-const ALLOWED_ATTACHMENT_HOSTS = ["utfs.io", "uploadthing.com"];
+const ALLOWED_ATTACHMENT_HOSTS = ["utfs.io", "uploadthing.com", "cloudinary.com", "res.cloudinary.com"];
 
 export type StudyQuestionReply = {
    content: string;
@@ -117,7 +117,7 @@ function formatHistory(
       .slice(-MAX_HISTORY_MESSAGES)
       .map(
          (msg) =>
-            `${msg.role.toUpperCase()}: ${truncateText(msg.content, 1000)}`,
+            `${msg.role.toUpperCase()}: ${truncateText(msg.content, 4000)}`,
       )
       .join("\n");
 }
@@ -448,8 +448,7 @@ STRICT RULES:
 
 FORMAT:
 
-## Topic Reviewer
-
+## Quiz Reviewer
 - Item
 
 ### Important Ideas
@@ -561,12 +560,20 @@ ${formattedHistory}
                }
 
                // TEXT ATTACHMENTS
-               const cleanedText = truncateText(
-                  sanitizeText(att.extractedText || ""),
-                  MAX_ATTACHMENT_CHARS,
-               );
+               let textContent = att.extractedText || "";
+               
+               // If there's an error message from the extractor, format it as a system note
+               if (textContent.startsWith("[Error:") || textContent.startsWith("[Note:")) {
+                   textContent = `(System Note: ${textContent})`;
+               } else {
+                   textContent = truncateText(
+                      sanitizeText(textContent),
+                      MAX_ATTACHMENT_CHARS,
+                   );
+               }
+
                return {
-                  text: `\n[START ATTACHMENT: ${att.name}]\n${cleanedText}\n[END ATTACHMENT]\n`,
+                  text: `\n[ATTACHMENT CONTENT: ${att.name}]\n${textContent}\n[END ATTACHMENT]\n`,
                };
             }),
          );

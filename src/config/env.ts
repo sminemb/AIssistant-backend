@@ -8,6 +8,9 @@ const envSchema = z.object({
   FRONTEND_ORIGINS: z.string().default("http://localhost:3000"),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

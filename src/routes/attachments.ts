@@ -1,11 +1,11 @@
-import fs from "fs/promises";
 import type { FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
 import { prisma } from "../db/prisma.js";
-import { LocalStorageService } from "../services/storage.js";
+import { CloudinaryStorageService } from "../services/storage.js";
 import { HttpError } from "../assistant/provider.js";
-import path from "path";
 import { extractTextFromFile } from "../services/text-extractor.js";
+import fs from "fs/promises";
+import path from "path";
 
 const ALLOWED_MIME_TYPES = [
     "image/jpeg",
@@ -15,13 +15,7 @@ const ALLOWED_MIME_TYPES = [
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
     "application/msword", // .doc
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-    "application/vnd.ms-excel", // .xls
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
-    "application/vnd.ms-powerpoint", // .ppt
     "text/plain",
-    "audio/mpeg",
-    "video/mp4",
 ];
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -34,19 +28,15 @@ export async function attachmentRoutes(app: FastifyInstance) {
         },
     });
 
-    const port = process.env.PORT || "4000";
-    const storage = new LocalStorageService(`http://localhost:${port}`);
-    await storage.init();
+    const storage = new CloudinaryStorageService();
 
     /**
-     * GET /uploads/:filename
-     * Serves uploaded files with appropriate security and CORS headers.
+     * GET /uploads/:filename (Legacy Support)
      */
     app.get("/uploads/:filename", async (request, reply) => {
         const { filename } = request.params as { filename: string };
         const filePath = path.join(process.cwd(), "uploads", filename);
 
-        // Security: Prevent directory traversal
         if (filename.includes("..") || filename.startsWith("/")) {
             throw new HttpError(403, "FORBIDDEN", "Invalid file path");
         }
@@ -55,7 +45,6 @@ export async function attachmentRoutes(app: FastifyInstance) {
             const file = await fs.readFile(filePath);
             return reply
                 .header("Content-Type", "application/octet-stream")
-                .header("Access-Control-Allow-Origin", process.env.FRONTEND_URL || "http://localhost:3000")
                 .send(file);
         } catch (error) {
             throw new HttpError(404, "NOT_FOUND", "File not found");
@@ -83,23 +72,32 @@ export async function attachmentRoutes(app: FastifyInstance) {
             throw new HttpError(400, "FILE_TOO_LARGE", "Maximum file size is 10MB");
         }
 
-        // Additional validation: check if user already has many attachments (this would need context of the conversation)
-        // For now, enforcing the single file upload limit via endpoint.
-        
         const originalName = data.filename;
         const sanitizedName = originalName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
 
-        const fileUrl = await storage.uploadFile(buffer, sanitizedName, data.mimetype);
+        try {
+            console.log(`[Upload] Starting upload for ${sanitizedName} (${data.mimetype})...`);
+            const fileUrl = await storage.uploadFile(buffer, sanitizedName, data.mimetype);
+            console.log(`[Upload] Successfully uploaded to: ${fileUrl}`);
 
-        // Extract text for AI scanning
-        const extractedText = await extractTextFromFile(buffer, data.mimetype);
+            // Extract text for AI scanning (don't fail the whole upload if this fails)
+            let extractedText = "";
+            try {
+                extractedText = await extractTextFromFile(buffer, data.mimetype);
+            } catch (extError) {
+                console.warn("[Upload] Text extraction failed, but continuing upload:", extError);
+            }
 
-        return {
-            url: fileUrl,
-            originalName,
-            mimeType: data.mimetype,
-            size: buffer.length,
-            extractedText
-        };
+            return {
+                url: fileUrl,
+                originalName,
+                mimeType: data.mimetype,
+                size: buffer.length,
+                extractedText
+            };
+        } catch (error: any) {
+            console.error("[Upload] Critical failure:", error);
+            throw new HttpError(500, "UPLOAD_FAILED", error.message || "Failed to upload file to storage");
+        }
     });
 }

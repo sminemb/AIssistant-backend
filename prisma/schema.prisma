@@ -152,6 +152,7 @@ model Attachment {
   fileUrl          String   @map("file_url")
   mimeType         String   @map("mime_type")
   size             Int
+  extractedText    String?  @map("extracted_text")
   createdAt        DateTime @default(now()) @map("created_at")
   
   message          Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)

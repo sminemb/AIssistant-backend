@@ -91,7 +91,12 @@ export async function conversationRoutes(app: FastifyInstance) {
     // Verify conversation ownership and get history
     const conversation = await prisma.conversation.findFirstOrThrow({
       where: { id: params.id, userId: user.id },
-      include: { messages: { orderBy: { createdAt: "asc" } } },
+      include: { 
+          messages: { 
+              orderBy: { createdAt: "asc" },
+              include: { attachments: true }
+          } 
+      },
     });
 
     // 1. Save user message (metadata only) and update conversation's updatedAt
@@ -113,6 +118,7 @@ export async function conversationRoutes(app: FastifyInstance) {
             fileUrl: att.url || "",
             mimeType: att.type,
             size: att.size || 0,
+            extractedText: att.extractedText || null,
           })),
         });
       }
@@ -132,9 +138,17 @@ export async function conversationRoutes(app: FastifyInstance) {
     });
 
     // 2. Prepare history for Assistant (last 10 messages)
-    const history = body.attachments && body.attachments.length > 0 
-        ? [] 
-        : conversation.messages.slice(-10).map(m => ({ role: m.role, content: m.content }));
+    // We include history and append attachment info to the content for historical context
+    const history = conversation.messages.slice(-10).map(m => {
+        let content = m.content;
+        if (m.attachments && m.attachments.length > 0) {
+            const attachmentInfo = m.attachments
+                .map(a => `[Attachment: ${a.originalName}${a.extractedText ? ` - Content: ${a.extractedText.slice(0, 4000)}...` : ''}]`)
+                .join('\n');
+            content = `${content}\n${attachmentInfo}`;
+        }
+        return { role: m.role, content };
+    });
 
     // 3. Call Assistant (pass full attachments with data if they have scanning data)
     const assistantProvider = createAssistantProvider(app.config);
@@ -146,6 +160,13 @@ export async function conversationRoutes(app: FastifyInstance) {
         extractedText: att.extractedText,
         url: att.url
     }));
+
+    console.log(`[Assistant] Sending Turn: "${body.content.slice(0, 50)}..." with ${attachmentsForAI?.length || 0} attachments`);
+    if (attachmentsForAI?.length) {
+        attachmentsForAI.forEach((a: any, i: number) => {
+            console.log(`[Assistant] Attachment ${i+1}: ${a.name} (${a.type}), text size: ${a.extractedText?.length || 0}`);
+        });
+    }
 
     let replyData: Awaited<ReturnType<typeof assistantProvider.answerStudyQuestion>>;
     
