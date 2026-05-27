@@ -109,6 +109,13 @@ async function refreshStudyProgress(tx: Prisma.TransactionClient, userId: number
 }
 
 export async function quizzesRoutes(app: FastifyInstance) {
+  app.get("/quizzes/topics/random", async (request) => {
+    const user = await app.requireUser(request);
+    const assistantProvider = createAssistantProvider(app.config);
+    const topics = await assistantProvider.generateTopics();
+    return { topics };
+  });
+
   app.get("/quizzes", async (request) => {
     const user = await app.requireUser(request);
     const quizzes = await prisma.quiz.findMany({

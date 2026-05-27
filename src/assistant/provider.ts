@@ -59,6 +59,8 @@ export interface AssistantProvider {
          extractedText?: string;
       }>,
    ): Promise<GeneratedQuiz>;
+
+   generateTopics(): Promise<string[]>;
 }
 
 type AssistantProviderEnv = {
@@ -440,7 +442,6 @@ FORMAT:
 
 ## Topic Reviewer
 
-### Key Concepts
 - Item
 
 ### Important Ideas
@@ -466,8 +467,6 @@ STRICT RULES:
 
 FORMAT:
 
-## Quick Answer
-
 ## Details
 
 ## Sources
@@ -488,8 +487,6 @@ STRICT RULES:
 - Avoid Wikipedia-style wording
 
 FORMAT:
-
-## What It Means
 
 ## Key Concepts
 
@@ -664,6 +661,23 @@ RULES:
 
       return parseGeneratedQuiz(responseText, questionCount);
    }
+   async generateTopics(): Promise<string[]> {
+      const systemPrompt = `
+Generate 5 diverse, interesting, and academic study topics for a quiz.
+Return ONLY a JSON array of strings.
+Example: ["Quantum Physics", "World History", "Calculus", "Web Development", "Art History"]
+`;
+      const response = await this.request(systemPrompt, [{ role: "user", parts: [{ text: "Generate 5 study topics" }] }], {
+         temperature: 0.7,
+         responseMimeType: "application/json",
+      });
+
+      try {
+         return JSON.parse(cleanJsonResponse(response));
+      } catch {
+         return ["Quantum Physics", "World History", "Calculus", "Web Development", "Art History"];
+      }
+   }
 }
 
 export function createAssistantProvider(
@@ -723,5 +737,9 @@ export class PlaceholderAssistantProvider implements AssistantProvider {
             correctOptionIndex: index % 4,
          })),
       };
+   }
+
+   async generateTopics(): Promise<string[]> {
+      return ["Quantum Physics", "World History", "Calculus", "JavaScript Closures", "Photosynthesis", "Macroeconomics", "Web Development", "Artificial Intelligence", "Organic Chemistry", "Art History"];
    }
 }
