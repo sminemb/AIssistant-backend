@@ -181,6 +181,14 @@ class MissingAssistantProvider implements AssistantProvider {
          "AI Study Assistant provider is not configured",
       );
    }
+
+   async generateTopics(): Promise<string[]> {
+      throw new HttpError(
+         503,
+         "ASSISTANT_PROVIDER_NOT_CONFIGURED",
+         "AI Study Assistant provider is not configured",
+      );
+   }
 }
 
 export class GeminiAssistantProvider implements AssistantProvider {
