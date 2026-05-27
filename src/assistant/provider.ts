@@ -14,17 +14,13 @@ const GEMINI_MODELS = [
 ] as const;
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
-
 const GEMINI_API_BASE_URL =
    "https://generativelanguage.googleapis.com/v1beta/models/";
-
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_RETRIES = 3;
 const MAX_ATTACHMENT_CHARS = 15000;
 const MAX_HISTORY_MESSAGES = 10;
-
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
-
 const ALLOWED_ATTACHMENT_HOSTS = ["utfs.io", "uploadthing.com"];
 
 export type StudyQuestionReply = {
@@ -127,16 +123,15 @@ function formatHistory(
 function parseStudyQuestionReply(text: string): StudyQuestionReply {
    const cleaned = text.trim();
 
-   // If it looks like a JSON object (starts with {), try to parse it
    if (cleaned.startsWith("{")) {
-       try {
-          const data = JSON.parse(cleaned);
-          if (typeof data?.content === "string") {
-             return { content: data.content };
-          }
-       } catch {
-          // If JSON parse fails, treat as plain Markdown
-       }
+      try {
+         const data = JSON.parse(cleaned);
+         if (typeof data?.content === "string") {
+            return { content: data.content };
+         }
+      } catch {
+         // Fallback to plain text on JSON parse failure
+      }
    }
 
    return {
@@ -150,9 +145,7 @@ function parseGeneratedQuiz(
 ): GeneratedQuiz {
    try {
       const cleaned = cleanJsonResponse(text);
-
       const parsed = JSON.parse(cleaned);
-
       const validated = QuizSchema.parse(parsed);
 
       if (validated.questions.length !== questionCount) {
@@ -162,7 +155,6 @@ function parseGeneratedQuiz(
       return validated;
    } catch (error) {
       console.error("Quiz validation failed:", error);
-
       throw new HttpError(
          502,
          "ASSISTANT_PROVIDER_INVALID_RESPONSE",
@@ -215,17 +207,14 @@ export class GeminiAssistantProvider implements AssistantProvider {
          }
 
          const response = await this.fetchImpl(url);
-
          if (!response.ok) {
             throw new Error("Failed to fetch attachment");
          }
 
          const arrayBuffer = await response.arrayBuffer();
-
          return Buffer.from(arrayBuffer).toString("base64");
       } catch (error) {
          console.error("Attachment fetch failed:", error);
-
          return null;
       }
    }
@@ -240,7 +229,6 @@ export class GeminiAssistantProvider implements AssistantProvider {
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
          for (const model of this.modelsToTry) {
             const controller = new AbortController();
-
             const timeout = setTimeout(() => {
                controller.abort();
             }, REQUEST_TIMEOUT_MS);
@@ -265,7 +253,7 @@ export class GeminiAssistantProvider implements AssistantProvider {
                         },
                         generationConfig: {
                            maxOutputTokens: 2048,
-                           temperature: 0.4,
+                           temperature: 0.6,
                            ...generationConfig,
                         },
                      }),
@@ -273,7 +261,6 @@ export class GeminiAssistantProvider implements AssistantProvider {
                );
 
                clearTimeout(timeout);
-
                const responseData = await response.json();
 
                if (!response.ok) {
@@ -291,13 +278,11 @@ export class GeminiAssistantProvider implements AssistantProvider {
                         JSON.stringify(responseData),
                      );
                   }
-
                   continue;
                }
 
                const text =
                   responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
-
                if (typeof text === "string" && text.trim().length > 0) {
                   return text;
                }
@@ -305,9 +290,7 @@ export class GeminiAssistantProvider implements AssistantProvider {
                lastError = responseData;
             } catch (error) {
                clearTimeout(timeout);
-
                console.error(`[Gemini ${model}] Request failed`, error);
-
                lastError = error;
 
                if (
@@ -320,12 +303,10 @@ export class GeminiAssistantProvider implements AssistantProvider {
          }
 
          const delay = Math.pow(2, attempt) * 1000;
-
          await new Promise((resolve) => setTimeout(resolve, delay));
       }
 
       console.error("Final Gemini error:", lastError);
-
       throw new HttpError(
          502,
          "ASSISTANT_PROVIDER_FAILED",
@@ -344,28 +325,204 @@ export class GeminiAssistantProvider implements AssistantProvider {
          url?: string;
       }>,
    ): Promise<StudyQuestionReply> {
+      // =====================================================
+      // INTENT DETECTION
+      // =====================================================
+      const lowerQuestion = questionText.toLowerCase();
+
+      const isStudyPlan =
+         lowerQuestion.includes("study plan") ||
+         lowerQuestion.includes("30-minute") ||
+         lowerQuestion.includes("30 minute") ||
+         lowerQuestion.includes("schedule") ||
+         lowerQuestion.includes("study routine") ||
+         lowerQuestion.includes("study schedule") ||
+         lowerQuestion.includes("learning roadmap") ||
+         lowerQuestion.includes("review routine") ||
+         lowerQuestion.includes("revision timetable");
+
+      const isQuizRequest =
+         lowerQuestion.includes("quiz") ||
+         lowerQuestion.includes("practice test") ||
+         lowerQuestion.includes("practice questions") ||
+         lowerQuestion.includes("assessment") ||
+         lowerQuestion.includes("reviewer") ||
+         lowerQuestion.includes("mock test");
+
+      // =====================================================
+      // SYSTEM PROMPT
+      // =====================================================
       let systemPrompt = `
-      You are a helpful AI study assistant.
+You are AIsisstant, a premium AI study assistant.
 
-      - If attachments are provided, use them to provide accurate answers based on the provided content.
-      - If no attachments are provided, use your general knowledge.
-      - Keep responses concise, structured, and easy to read.
+PERSONALITY:
+- Smart, modern, and engaging
+- Educational but conversational
+- Clear and easy to understand
+- Avoid robotic or textbook-like responses
 
-      - Whenever a user asks for a study plan, provide a 30-minute plan using simple, clean plain text. 
-      - Use dashes (-) for bullet points.
-      - Do NOT use any Markdown formatting like # headers, **bolding**, or *italics*.
-      - Ensure it looks like a clean, simple text document.
+GLOBAL RULES:
+- Never hallucinate facts
+- If unsure, say:
+"I do not have enough information."
+- Keep answers concise but meaningful
+- Avoid repetitive filler
+- Prioritize clarity over complexity
 
-      - If a user asks for a quiz, provide a brief, high-level summary or "reviewer" of the core concepts related to the topic (using plain text, no Markdown headers or bolding), then append the hidden tag [[GENERATE_QUIZ]] at the very end.
-      `;
+// MODE PRIORITY:
+// 1. QUIZ_REQUEST
+// 2. STUDY_PLAN
+// 3. WEB_SEARCH
+// 4. STUDY_EXPLANATION
 
+// Higher priority modes OVERRIDE lower modes completely.
+`;
+
+      // =====================================================
+      // STUDY PLAN MODE
+      // =====================================================
+      if (isStudyPlan) {
+         systemPrompt += `
+
+CURRENT MODE: STUDY_PLAN
+
+THIS MODE HAS ABSOLUTE PRIORITY.
+
+CRITICAL RULES FOR LINE BREAKS AND VISUAL FORMATTING:
+- Use EXACTLY two newline characters (\\n\\n) to create a single visible blank line between major blocks.
+- Do NOT merge paragraphs together. Preserve the vertical spacing.
+- Plain text characters ONLY.
+- Absolutely NO markdown elements such as bold (**), italics (*), bullet lists (-), horizontal lines (---), markdown headers (#), or tags.
+- NO introductions, conclusions (except the footer), or filler text.
+- DO NOT repeat the user's request.
+
+REQUIRED FORMAT (MUST USE EXACTLY TWO NEWLINES TO SEPARATE SECTIONS):
+
+30-Minute Focus Session: [Topic]
+
+Goal:
+[One concise sentence on the learning goal]
+
+00:00 - 00:05
+[Actionable description]
+
+00:05 - 00:15
+[Actionable description]
+
+00:15 - 00:25
+[Actionable description]
+
+00:25 - 00:30
+[Actionable description]
+
+Small consistent sessions build stronger long-term memory.
+
+IMPORTANT: Ensure there is exactly one empty line (two newlines) separating each block. Do not run text together on adjacent lines.
+`;
+      }
+      // =====================================================
+      // QUIZ REQUEST MODE
+      // =====================================================
+      else if (isQuizRequest) {
+         systemPrompt += `
+
+CURRENT MODE: QUIZ_REQUEST
+
+STRICT RULES:
+- DO NOT generate actual quiz questions
+- Create a concise reviewer
+- Organize concepts clearly
+- Use markdown formatting
+- End with:
+[[GENERATE_QUIZ]]
+
+FORMAT:
+
+## Topic Reviewer
+
+### Key Concepts
+- Item
+
+### Important Ideas
+Short explanation
+
+[[GENERATE_QUIZ]]
+`;
+      }
+      // =====================================================
+      // WEB SEARCH MODE
+      // =====================================================
+      else if (searchMode) {
+         systemPrompt += `
+
+CURRENT MODE: WEB_SEARCH
+
+STRICT RULES:
+- Use polished markdown formatting
+- Use concise summaries
+- Avoid walls of text
+- Cite ALL sources:
+  [Source](URL)
+
+FORMAT:
+
+## Quick Answer
+
+## Details
+
+## Sources
+`;
+      }
+      // =====================================================
+      // STUDY EXPLANATION MODE
+      // =====================================================
+      else {
+         systemPrompt += `
+
+CURRENT MODE: STUDY_EXPLANATION
+
+STRICT RULES:
+- Use markdown formatting
+- Explain concepts simply first
+- Use examples when useful
+- Avoid Wikipedia-style wording
+
+FORMAT:
+
+## What It Means
+
+## Key Concepts
+
+## Example
+
+## Quick Recap
+`;
+      }
+
+      // =====================================================
+      // HISTORY
+      // =====================================================
       const formattedHistory = formatHistory(history);
 
+      // =====================================================
+      // PARTS
+      // =====================================================
       const parts: any[] = [
          {
             text: `
 USER QUESTION:
 ${questionText}
+
+ACTIVE MODE:
+${
+   isStudyPlan
+      ? "STUDY_PLAN"
+      : isQuizRequest
+        ? "QUIZ_REQUEST"
+        : searchMode
+          ? "WEB_SEARCH"
+          : "STUDY_EXPLANATION"
+}
 
 SEARCH MODE:
 ${searchMode ? "ENABLED" : "DISABLED"}
@@ -376,21 +533,20 @@ ${formattedHistory}
          },
       ];
 
+      // =====================================================
+      // ATTACHMENTS
+      // =====================================================
       if (attachments?.length) {
          const processedAttachments = await Promise.all(
             attachments.map(async (att) => {
+               // IMAGE ATTACHMENTS
                if (att.url && att.type.startsWith("image/")) {
                   const base64 = await this.fetchAttachmentAsBase64(att.url);
-
                   if (!base64) {
                      return {
-                        text: `
-[ATTACHMENT FAILED]
-File: ${att.name}
-`,
+                        text: `\n[ATTACHMENT FAILED]\nFile: ${att.name}\n`,
                      };
                   }
-
                   return {
                      inline_data: {
                         mime_type: att.type,
@@ -399,32 +555,39 @@ File: ${att.name}
                   };
                }
 
+               // TEXT ATTACHMENTS
                const cleanedText = truncateText(
                   sanitizeText(att.extractedText || ""),
                   MAX_ATTACHMENT_CHARS,
                );
-
                return {
-                  text: `
-[START ATTACHMENT: ${att.name}]
-${cleanedText}
-[END ATTACHMENT]
-`,
+                  text: `\n[START ATTACHMENT: ${att.name}]\n${cleanedText}\n[END ATTACHMENT]\n`,
                };
             }),
          );
-
          parts.push(...processedAttachments);
       }
 
+      // =====================================================
+      // REQUEST
+      // =====================================================
       const response = await this.request(
          systemPrompt,
-         [{ role: "user", parts }],
+         [
+            {
+               role: "user",
+               parts,
+            },
+         ],
          {
-            temperature: 0.3,
+            temperature: isStudyPlan ? 0.1 : 0.7,
+            maxOutputTokens: 2048,
          },
       );
 
+      // =====================================================
+      // RETURN
+      // =====================================================
       return parseStudyQuestionReply(response);
    }
 
@@ -474,20 +637,11 @@ RULES:
                   sanitizeText(a.extractedText || ""),
                   MAX_ATTACHMENT_CHARS,
                );
-
-               return `
-[START ATTACHMENT: ${a.name}]
-${cleanedText}
-[END ATTACHMENT]
-`;
+               return `\n[START ATTACHMENT: ${a.name}]\n${cleanedText}\n[END ATTACHMENT]\n`;
             })
             .join("\n");
 
-         systemPrompt += `
-
-CONTEXT FROM ATTACHMENTS:
-${attachmentContext}
-`;
+         systemPrompt += `\nCONTEXT FROM ATTACHMENTS:\n${attachmentContext}\n`;
       }
 
       const responseText = await this.request(
@@ -497,13 +651,7 @@ ${attachmentContext}
                role: "user",
                parts: [
                   {
-                     text: `
-Quiz Topic:
-${quizTopic}
-
-Question Count:
-${questionCount}
-`,
+                     text: `\nQuiz Topic:\n${quizTopic}\n\nQuestion Count:\n${questionCount}\n`,
                   },
                ],
             },
@@ -524,7 +672,6 @@ export function createAssistantProvider(
 ): AssistantProvider {
    if (env.GEMINI_API_KEY) {
       const preferredModel = env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
-
       const modelsToTry: string[] = [];
 
       if (GEMINI_MODELS.includes(preferredModel as any)) {
@@ -533,7 +680,6 @@ export function createAssistantProvider(
          console.warn(
             `Unknown GEMINI_MODEL "${preferredModel}". Falling back to ${DEFAULT_GEMINI_MODEL}`,
          );
-
          modelsToTry.push(DEFAULT_GEMINI_MODEL);
       }
 

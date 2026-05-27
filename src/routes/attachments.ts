@@ -83,6 +83,9 @@ export async function attachmentRoutes(app: FastifyInstance) {
             throw new HttpError(400, "FILE_TOO_LARGE", "Maximum file size is 10MB");
         }
 
+        // Additional validation: check if user already has many attachments (this would need context of the conversation)
+        // For now, enforcing the single file upload limit via endpoint.
+        
         const originalName = data.filename;
         const sanitizedName = originalName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
 
