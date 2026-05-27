@@ -3,7 +3,7 @@
 **Backend Repository**: [AIssistant-backend](https://github.com/sminemb/AIssistant-backend)  
 **Frontend Repository**: [AIssistant-frontend](https://github.com/carlotata/AIssistant) 
 
-REST JSON backend for AIssistant, an academic chatbot for students powered by Google's Gemini AI models.
+REST JSON backend for AIssistant, an academic chatbot for students powered by Google's Gemini AI models, featuring persistent Cloudinary-backed file storage and intelligent text extraction for study material analysis.
 
 ## Stack
 
@@ -12,6 +12,7 @@ REST JSON backend for AIssistant, an academic chatbot for students powered by Go
 - Prisma
 - PostgreSQL
 - Google Gemini API
+- Cloudinary (File Storage)
 - HTTP-only cookie sessions with CSRF protection
 
 ## Documentation
@@ -45,14 +46,6 @@ npm run prisma:migrate
 npm run dev
 ```
 
-### Local Development Uploads
-The `uploads/` directory is ignored by Git. If your local development requires file uploads, ensure you create the directory manually:
-
-```bash
-mkdir uploads
-```
-You can populate this directory with necessary test files as needed.
-
 The API runs on `PORT` from `.env`, defaulting to `4000`.
 
 ---
@@ -77,7 +70,8 @@ The current suite covers:
 - Study Progress aggregation
 - Student Dashboard
 - Gemini provider fallback behavior
-- Documentation drift checks
+- Document text extraction
+- File upload handling
 
 ---
 
@@ -91,12 +85,16 @@ SESSION_SECRET="replace-with-a-long-random-secret"
 FRONTEND_ORIGINS="http://localhost:3000"
 GEMINI_API_KEY=""
 GEMINI_MODEL=""
+CLOUDINARY_CLOUD_NAME=""
+CLOUDINARY_API_KEY=""
+CLOUDINARY_API_SECRET=""
 ```
 
 ## Environment Notes
 
 - `SESSION_SECRET` must be at least 32 characters.
-- In production, `GEMINI_API_KEY` must be configured before Study Question answering or Quiz generation can succeed.
+- In production, `GEMINI_API_KEY` must be configured.
+- `CLOUDINARY_*` variables are required for file attachment functionality.
 - The backend automatically falls back across multiple Gemini models if the preferred model fails or becomes rate-limited.
 - `GEMINI_MODEL` is optional. If omitted, the backend uses `gemini-2.5-flash`.
 
@@ -118,9 +116,17 @@ Routes are unversioned for the MVP backend contract.
 - `POST /auth/logout`
 - `GET /auth/me`
 
-## Dashboard
+## Admin
 
-- `GET /dashboard/summary`
+- `GET /admin/csrf`
+- `GET /admin/users`
+- `GET /admin/logs`
+- `GET /admin/logs/:userId`
+- `POST /admin/create`
+- `PATCH /admin/users/:userId`
+- `PATCH /admin/users/:userId/role`
+- `DELETE /admin/users/:userId`
+- `POST /admin/promote`
 
 ## Study Questions
 
@@ -134,9 +140,9 @@ Routes are unversioned for the MVP backend contract.
 - `GET /quizzes/:quizId`
 - `POST /quizzes/:quizId/submit`
 
-## Study Progress
+## Attachments
 
-- `GET /study-progress`
+- `POST /attachments/upload`
 
 Unsafe cookie-authenticated methods require the `X-CSRF-Token` header to match the CSRF token issued by `GET /auth/csrf`.
 
@@ -169,6 +175,8 @@ Auth and ownership failures use stable codes such as:
 - `ASSISTANT_PROVIDER_NOT_CONFIGURED`
 - `ASSISTANT_PROVIDER_FAILED`
 - `ASSISTANT_PROVIDER_INVALID_RESPONSE`
+- `UPLOAD_FAILED`
+- `INVALID_MIME_TYPE`
 
 ---
 
