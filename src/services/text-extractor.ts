@@ -1,5 +1,6 @@
 import * as pdf from "pdf-parse";
 import mammoth from "mammoth";
+import Tesseract from "tesseract.js";
 
 export async function extractTextFromFile(buffer: Buffer, mimeType: string): Promise<string> {
     console.log("DEBUG: Extracting text from file, mimeType:", mimeType);
@@ -12,13 +13,16 @@ export async function extractTextFromFile(buffer: Buffer, mimeType: string): Pro
         }
 
         if (mimeType.includes("wordprocessingml") || mimeType.includes("msword")) {
-            // Mammoth is good for simple text, but let's log if it fails
             const result = await mammoth.extractRawText({ buffer });
             console.log("DEBUG: Word extraction success, text length:", result.value.length);
-            if (result.value.trim().length === 0) {
-                 console.warn("DEBUG: Word doc extraction returned empty string. Possible complex formatting.");
-            }
             return result.value || "[File detected as Word Doc, but no readable text found]";
+        }
+
+        if (mimeType.startsWith("image/")) {
+            console.log("DEBUG: Running OCR on image...");
+            const { data: { text } } = await Tesseract.recognize(buffer, 'eng');
+            console.log("DEBUG: OCR success, text length:", text.length);
+            return text;
         }
 
         if (mimeType.includes("text/") || mimeType === "application/json" || mimeType === "text/csv") {
