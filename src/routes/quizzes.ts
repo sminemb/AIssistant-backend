@@ -31,7 +31,7 @@ const submitQuizSchema = z.object({
 type QuizWithQuestions = Quiz & {
   questions: Array<QuizQuestion & { options: QuizOption[]; answer: QuizAnswer | null }>;
 };
-function quizDto(quiz: QuizWithQuestions, includeCorrectness: boolean) {
+function quizDto(quiz: QuizWithQuestions | (Quiz & { questions?: any[] }), includeCorrectness: boolean) {
   return {
     id: quiz.id,
     userId: quiz.userId,
@@ -39,27 +39,30 @@ function quizDto(quiz: QuizWithQuestions, includeCorrectness: boolean) {
     quizTopic: quiz.quizTopic,
     score: quiz.score,
     state: quiz.state,
+    difficulty: quiz.difficulty,
     createdAt: quiz.createdAt,
     updatedAt: quiz.updatedAt,
     questions: quiz.questions
-      .sort((left, right) => left.position - right.position)
-      .map((question) => ({
-        id: question.id,
-        quizId: question.quizId,
-        questionText: question.questionText,
-        position: question.position,
-        selectedOptionId: question.answer?.selectedOptionId ?? null,
-        isCorrect: includeCorrectness ? question.answer?.isCorrect ?? null : undefined,
-        options: question.options
+      ? quiz.questions
           .sort((left, right) => left.position - right.position)
-          .map((option) => ({
-            id: option.id,
-            quizQuestionId: option.quizQuestionId,
-            optionText: option.optionText,
-            position: option.position,
-            isCorrect: includeCorrectness ? option.isCorrect : undefined,
-          })),
-      })),
+          .map((question) => ({
+            id: question.id,
+            quizId: question.quizId,
+            questionText: question.questionText,
+            position: question.position,
+            selectedOptionId: question.answer?.selectedOptionId ?? null,
+            isCorrect: includeCorrectness ? question.answer?.isCorrect ?? null : undefined,
+            options: question.options
+              .sort((left, right) => left.position - right.position)
+              .map((option) => ({
+                id: option.id,
+                quizQuestionId: option.quizQuestionId,
+                optionText: option.optionText,
+                position: option.position,
+                isCorrect: includeCorrectness ? option.isCorrect : undefined,
+              })),
+          }))
+      : undefined,
   };
 }
 
@@ -118,12 +121,17 @@ export async function quizzesRoutes(app: FastifyInstance) {
 
   app.get("/quizzes", async (request) => {
     const user = await app.requireUser(request);
+    const { difficulty } = parseParams(request, z.object({ difficulty: z.enum(['easy', 'medium', 'hard']).optional() }));
+
     const quizzes = await prisma.quiz.findMany({
-      where: { userId: user.id },
+      where: { 
+        userId: user.id,
+        ...(difficulty ? { difficulty } : {})
+      },
       orderBy: { createdAt: "desc" },
     });
 
-    return { quizzes };
+    return { quizzes: quizzes.map(q => quizDto(q as any, false)) };
   });
 
   app.post("/quizzes", async (request, reply) => {
@@ -136,7 +144,7 @@ export async function quizzesRoutes(app: FastifyInstance) {
     // but we can look for them in request body directly for now if necessary.
     const attachments = (body as any).attachments;
 
-    const generatedQuiz = await assistantProvider.generateQuiz(body.quizTopic, body.questionCount, attachments);
+    const generatedQuiz = await assistantProvider.generateQuiz(body.quizTopic, body.questionCount, body.difficulty, attachments);
 
     // Shorten topic to 1-4 words, professional placeholder if too generic/short
     const words = body.quizTopic.split(/\s+/);
@@ -149,6 +157,7 @@ export async function quizzesRoutes(app: FastifyInstance) {
         userId: user.id,
         conversationId: body.conversationId,
         quizTopic: finalTopic,
+        difficulty: body.difficulty,
         questions: {
           create: generatedQuiz.questions.map((question, questionIndex) => ({
             questionText: question.questionText,

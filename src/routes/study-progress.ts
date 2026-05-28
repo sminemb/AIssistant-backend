@@ -8,23 +8,44 @@ export async function studyProgressRoutes(app: FastifyInstance) {
     // Fetch all completed quizzes for this user
     const completedQuizzes = await prisma.quiz.findMany({
       where: { userId: user.id, state: "COMPLETED", score: { not: null } },
-      select: { quizTopic: true, score: true, createdAt: true },
+      select: { quizTopic: true, score: true, createdAt: true, difficulty: true },
     });
 
     // Calculate unique days active
     const activeDays = new Set(completedQuizzes.map(q => q.createdAt.toDateString())).size;
 
     // Calculate metrics
-    const highestScoresByTopic = new Map<string, number>();
+    const topicDifficultyScores = new Map<string, { score: number, difficulty: string }>();
+    
+    // Group by topic AND difficulty
+    const proficiencyMap = new Map<string, Map<string, number>>(); // topic -> difficulty -> maxScore
+
     for (const quiz of completedQuizzes) {
-      const currentMax = highestScoresByTopic.get(quiz.quizTopic.toLowerCase()) ?? 0;
-      highestScoresByTopic.set(quiz.quizTopic.toLowerCase(), Math.max(currentMax, quiz.score ?? 0));
+      const topic = quiz.quizTopic.toLowerCase();
+      const diff = quiz.difficulty ?? 'medium';
+      
+      if (!proficiencyMap.has(topic)) proficiencyMap.set(topic, new Map());
+      const diffMap = proficiencyMap.get(topic)!;
+      
+      const currentMax = diffMap.get(diff) ?? 0;
+      diffMap.set(diff, Math.max(currentMax, quiz.score ?? 0));
+    }
+
+    // Transform proficiencyMap for the UI: { "Topic (Difficulty)": score }
+    const topicBreakdown: Record<string, number> = {};
+    for (const [topic, diffMap] of proficiencyMap.entries()) {
+        for (const [diff, score] of diffMap.entries()) {
+            topicBreakdown[`${topic.charAt(0).toUpperCase() + topic.slice(1)} (${diff})`] = score;
+        }
     }
 
     const totalQuizzes = completedQuizzes.length;
-    const completedTopics = highestScoresByTopic.size;
-    const scores = Array.from(highestScoresByTopic.values());
-    const averageScore = scores.length === 0 ? 0 : scores.reduce((a, b) => a + b, 0) / scores.length;
+    // Calculate unique topics mastered (any difficulty)
+    const completedTopics = proficiencyMap.size;
+    
+    // Calculate overall average
+    const allScores = completedQuizzes.map(q => q.score ?? 0);
+    const averageScore = allScores.length === 0 ? 0 : allScores.reduce((a, b) => a + b, 0) / allScores.length;
 
     // Update progress record
     const studyProgress = await prisma.studyProgress.upsert({
@@ -36,7 +57,17 @@ export async function studyProgressRoutes(app: FastifyInstance) {
     // Generate insights
     const insights: string[] = [];
     if (completedQuizzes.length > 0) {
-        const sortedTopics = Array.from(highestScoresByTopic.entries()).sort((a, b) => b[1] - a[1]);
+        // Flatten proficiencyMap to find overall topic performance
+        const topicHighestScores = new Map<string, number>();
+        for (const [topic, diffMap] of proficiencyMap.entries()) {
+            let maxForTopic = 0;
+            for (const score of diffMap.values()) {
+                maxForTopic = Math.max(maxForTopic, score);
+            }
+            topicHighestScores.set(topic, maxForTopic);
+        }
+
+        const sortedTopics = Array.from(topicHighestScores.entries()).sort((a, b) => b[1] - a[1]);
         
         // Filter out topics with 100% mastery
         const needsReview = sortedTopics.filter(([, score]) => score < 100);
@@ -48,7 +79,7 @@ export async function studyProgressRoutes(app: FastifyInstance) {
 
         if (needsReview.length > 0) {
             const worst = needsReview[needsReview.length - 1];
-            insights.push(`Consider reviewing ${worst[0]}, your current lowest score is ${Math.round(worst[1])}%.`);
+            insights.push(`Consider reviewing ${worst[0]}, your current highest score is ${Math.round(worst[1])}%.`);
         } else if (mastered.length > 0) {
             insights.push("You've mastered everything! Time for a break or a new challenge.");
         }
@@ -59,7 +90,8 @@ export async function studyProgressRoutes(app: FastifyInstance) {
     // Return the progress with extra topic-specific data for the UI
     return {
         studyProgress: { ...studyProgress, activeDays },
-        topicBreakdown: Object.fromEntries(highestScoresByTopic),
+        topicBreakdown,
         insights
-    };  });
+    };  
+  });
 }

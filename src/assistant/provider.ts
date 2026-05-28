@@ -53,6 +53,7 @@ export interface AssistantProvider {
    generateQuiz(
       quizTopic: string,
       questionCount: number,
+      difficulty?: 'easy' | 'medium' | 'hard',
       attachments?: Array<{
          name: string;
          type: string;
@@ -606,6 +607,7 @@ ${formattedHistory}
    async generateQuiz(
       quizTopic: string,
       questionCount: number,
+      difficulty: 'easy' | 'medium' | 'hard' = 'medium',
       attachments?: Array<{
          name: string;
          type: string;
@@ -633,6 +635,7 @@ Use this exact format:
 
 RULES:
 - Generate exactly ${questionCount} questions.
+- Difficulty level: ${difficulty.toUpperCase()}. Adjust complexity accordingly.
 - Exactly 4 options per question.
 - correctOptionIndex must be 0, 1, 2, or 3.
 - Questions must test understanding of the provided topic.
@@ -663,13 +666,13 @@ RULES:
                role: "user",
                parts: [
                   {
-                     text: `\nQuiz Topic:\n${quizTopic}\n\nQuestion Count:\n${questionCount}\n`,
+                     text: `\nQuiz Topic:\n${quizTopic}\n\nQuestion Count:\n${questionCount}\nDifficulty:\n${difficulty}\n`,
                   },
                ],
             },
          ],
          {
-            temperature: 0.7,
+            temperature: difficulty === 'easy' ? 0.4 : difficulty === 'hard' ? 0.9 : 0.7,
             responseMimeType: "application/json",
          },
       );
