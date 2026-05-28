@@ -400,7 +400,6 @@ CURRENT MODE: STUDY_PLAN
 THIS MODE HAS ABSOLUTE PRIORITY.
 
 CRITICAL RULES FOR LINE BREAKS AND VISUAL FORMATTING:
-- Use EXACTLY two newline characters (\\n\\n) to create a single visible blank line between major blocks.
 - Do NOT merge paragraphs together. Preserve the vertical spacing.
 - Plain text characters ONLY.
 - Absolutely NO markdown elements such as bold (**), italics (*), bullet lists (-), horizontal lines (---), markdown headers (#), or tags.
