@@ -11,6 +11,16 @@ export async function studyProgressRoutes(app: FastifyInstance) {
       select: { quizTopic: true, score: true, createdAt: true, difficulty: true },
     });
 
+    // Fetch study sessions to calculate actual duration
+    const sessions = await prisma.studySession.findMany({
+      where: { userId: user.id },
+      select: { startTime: true, endTime: true }
+    });
+    
+    const totalMinutes = Math.floor(sessions.reduce((acc, session) => {
+        return acc + (session.endTime.getTime() - session.startTime.getTime()) / (1000 * 60);
+    }, 0));
+
     // Calculate unique days active
     const activeDays = new Set(completedQuizzes.map(q => q.createdAt.toDateString())).size;
 
@@ -89,7 +99,7 @@ export async function studyProgressRoutes(app: FastifyInstance) {
 
     // Return the progress with extra topic-specific data for the UI
     return {
-        studyProgress: { ...studyProgress, activeDays },
+        studyProgress: { ...studyProgress, activeDays, totalMinutes },
         topicBreakdown,
         insights
     };  

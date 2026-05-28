@@ -7,6 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model StudySession {
+  id        Int      @id @default(autoincrement()) @map("session_id")
+  userId    Int      @map("user_id")
+  startTime DateTime @map("start_time")
+  endTime   DateTime @map("end_time")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model User {
   id             Int             @id @default(autoincrement()) @map("user_id")
   name           String          @db.VarChar(120)
@@ -17,6 +27,7 @@ model User {
   conversations  Conversation[]
   quizzes        Quiz[]
   sessions       Session[]
+  studySessions  StudySession[]
   studyProgress  StudyProgress?
   studyQuestions StudyQuestion[]
   systemLogs     SystemLog[]

@@ -16,6 +16,7 @@ import { quizzesRoutes } from "./routes/quizzes.js";
 import { studyProgressRoutes } from "./routes/study-progress.js";
 import { studyQuestionsRoutes } from "./routes/study-questions.js";
 import { attachmentRoutes } from "./routes/attachments.js";
+import { sessionRoutes } from "./routes/sessions.js";
 import { configureCloudinary } from "./config/cloudinary.js";
 import path from "path";
 import fastifyStatic from "@fastify/static";
@@ -88,6 +89,7 @@ export async function buildServer(env: AppEnv) {
   await app.register(studyQuestionsRoutes);
   await app.register(quizzesRoutes);
   await app.register(studyProgressRoutes);
+  await app.register(sessionRoutes);
 
   app.addHook("onClose", async () => {
     await prisma.$disconnect();
