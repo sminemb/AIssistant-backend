@@ -9,12 +9,12 @@ export async function dashboardRoutes(app: FastifyInstance) {
       prisma.conversation.findMany({
         where: { userId: user.id },
         orderBy: { updatedAt: "desc" },
-        take: 5,
+        take: 20,
       }),
       prisma.quiz.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "desc" },
-        take: 5,
+        take: 20,
       }),
       prisma.studyProgress.upsert({
         where: { userId: user.id },
