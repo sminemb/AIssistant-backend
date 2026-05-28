@@ -140,6 +140,12 @@ Routes are unversioned for the MVP backend contract.
 - `GET /quizzes/:quizId`
 - `POST /quizzes/:quizId/submit`
 
+## Study Sessions
+
+- `POST /sessions/start`
+- `POST /sessions/heartbeat`
+- `POST /sessions/end`
+
 ## Attachments
 
 - `POST /attachments/upload`
@@ -334,6 +340,7 @@ Completed quizzes include correctness and the student's selected options for Qui
 {
   quizTopic: string;
   questionCount?: number; // default 5, max 10
+  difficulty?: "easy" | "medium" | "hard"; // default "medium"
 }
 ```
 
