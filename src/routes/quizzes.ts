@@ -44,8 +44,8 @@ function quizDto(quiz: QuizWithQuestions | (Quiz & { questions?: any[] }), inclu
     updatedAt: quiz.updatedAt,
     questions: quiz.questions
       ? quiz.questions
-          .sort((left, right) => left.position - right.position)
-          .map((question) => ({
+          .sort((left: any, right: any) => left.position - right.position)
+          .map((question: any) => ({
             id: question.id,
             quizId: question.quizId,
             questionText: question.questionText,
@@ -53,8 +53,8 @@ function quizDto(quiz: QuizWithQuestions | (Quiz & { questions?: any[] }), inclu
             selectedOptionId: question.answer?.selectedOptionId ?? null,
             isCorrect: includeCorrectness ? question.answer?.isCorrect ?? null : undefined,
             options: question.options
-              .sort((left, right) => left.position - right.position)
-              .map((option) => ({
+              .sort((left: any, right: any) => left.position - right.position)
+              .map((option: any) => ({
                 id: option.id,
                 quizQuestionId: option.quizQuestionId,
                 optionText: option.optionText,
