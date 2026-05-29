@@ -146,11 +146,9 @@ export async function quizzesRoutes(app: FastifyInstance) {
 
     const generatedQuiz = await assistantProvider.generateQuiz(body.quizTopic, body.questionCount, body.difficulty, attachments);
 
-    // Shorten topic to 1-4 words, professional placeholder if too generic/short
-    const words = body.quizTopic.split(/\s+/);
-    const shortTopic = words.slice(0, 4).join(" ");
+    // Use the original topic, or a professional placeholder if too generic
     const isGenericTopic = body.quizTopic.toLowerCase() === "general study topic" || body.quizTopic.length < 3;
-    const finalTopic = isGenericTopic ? "Topic Assessment" : shortTopic;
+    const finalTopic = isGenericTopic ? "Topic Assessment" : body.quizTopic;
 
     const quiz = await prisma.quiz.create({
       data: {
