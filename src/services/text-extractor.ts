@@ -1,6 +1,10 @@
 import * as pdf from "pdf-parse";
 import mammoth from "mammoth";
 import Tesseract from "tesseract.js";
+import parsePptx from "pptx-text-parser";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
 
 export async function extractTextFromFile(buffer: Buffer, mimeType: string): Promise<string> {
     console.log(`[Extractor] Starting extraction for MIME type: ${mimeType}`);
@@ -31,6 +35,23 @@ export async function extractTextFromFile(buffer: Buffer, mimeType: string): Pro
             } catch (wordError: any) {
                 console.error("[Extractor] mammoth failed:", wordError.message);
                 return `[Error: Failed to parse Word document: ${wordError.message}]`;
+            }
+        }
+
+        if (mimeType.includes("presentationml")) {
+            try {
+                const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pptx-"));
+                const tempFilePath = path.join(tempDir, "temp.pptx");
+                await fs.writeFile(tempFilePath, buffer);
+                
+                const text = await parsePptx(tempFilePath, "text");
+                await fs.rm(tempDir, { recursive: true, force: true });
+                
+                console.log(`[Extractor] PPTX extraction complete. Length: ${text.length} chars`);
+                return text || "[Note: PPTX document contained no readable text]";
+            } catch (pptxError: any) {
+                console.error("[Extractor] pptx-text-parser failed:", pptxError.message);
+                return `[Error: Failed to parse PPTX document: ${pptxError.message}]`;
             }
         }
 
