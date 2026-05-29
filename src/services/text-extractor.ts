@@ -7,12 +7,9 @@ export async function extractTextFromFile(buffer: Buffer, mimeType: string): Pro
     try {
         if (mimeType === "application/pdf") {
             try {
-                const parser = (pdf as any).default || pdf;
-                if (typeof parser !== 'function') {
-                    console.error("[Extractor] PDF parser is not a function:", typeof parser);
-                    return "[Error: PDF parser configuration issue]";
-                }
-                const data = await parser(buffer);
+                // pdf-parse 2.4.5+ uses PDFParse class
+                const parser = new (pdf as any).PDFParse({ data: buffer });
+                const data = await parser.getText();
                 const text = data.text?.trim() || "";
                 console.log(`[Extractor] PDF extraction complete. Length: ${text.length} chars`);
                 if (text.length === 0) {
