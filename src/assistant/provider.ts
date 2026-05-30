@@ -433,19 +433,19 @@ Small consistent sessions build stronger long-term memory.
 CURRENT MODE: QUIZ_REQUEST
 
 STRICT RULES:
-- DO NOT generate actual quiz questions
-- Create a concise reviewer
-- Organize concepts clearly
-- Use markdown formatting
-- End with:
-[[GENERATE_QUIZ]]
+- DO NOT generate actual quiz questions.
+- Create a concise reviewer.
+- Organize concepts clearly using markdown.
+- SPACING: Never use more than one empty line between sections. Do not use double empty lines.
+- End the response strictly with: [[GENERATE_QUIZ]]
 
-FORMAT:
-Quiz - Subject
-- Item
-Important Ideas
-Short explanation
+REQUIRED FORMAT:
+### Quiz - [Subject]
+**Important Ideas:**
+- **[Concept Name]**: [Short explanation]
+- **[Concept Name]**: [Short explanation]
 
+[Summary of the topic + a breather for the user]
 [[GENERATE_QUIZ]]
 `;
       }
