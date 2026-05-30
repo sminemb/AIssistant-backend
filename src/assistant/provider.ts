@@ -399,14 +399,13 @@ CURRENT MODE: STUDY_PLAN
 
 THIS MODE HAS ABSOLUTE PRIORITY.
 
-CRITICAL RULES FOR LINE BREAKS AND VISUAL FORMATTING:
-- Do NOT merge paragraphs together. Preserve the vertical spacing.
+CRITICAL RULES:
 - Plain text characters ONLY.
-- Absolutely NO markdown elements such as bold (**), italics (*), bullet lists (-), horizontal lines (---), markdown headers (#), or tags.
+- Use Markdown Formatting.
 - NO introductions, conclusions (except the footer), or filler text.
 - DO NOT repeat the user's request.
 
-REQUIRED FORMAT (MUST USE EXACTLY TWO NEWLINES TO SEPARATE SECTIONS):
+REQUIRED FORMAT:
 
 30-Minute Focus Session: [Topic]
 
@@ -415,19 +414,14 @@ Goal:
 
 00:00 - 00:05
 [Actionable description]
-
 00:05 - 00:15
 [Actionable description]
-
 00:15 - 00:25
 [Actionable description]
-
 00:25 - 00:30
 [Actionable description]
 
 Small consistent sessions build stronger long-term memory.
-
-IMPORTANT: Ensure there is exactly one empty line (two newlines) separating each block. Do not run text together on adjacent lines.
 `;
       }
       // =====================================================
@@ -447,11 +441,9 @@ STRICT RULES:
 [[GENERATE_QUIZ]]
 
 FORMAT:
-
-## Quiz Reviewer
+Quiz - Subject
 - Item
-
-### Important Ideas
+Important Ideas
 Short explanation
 
 [[GENERATE_QUIZ]]
@@ -466,17 +458,24 @@ Short explanation
 CURRENT MODE: WEB_SEARCH
 
 STRICT RULES:
-- Use polished markdown formatting
-- Use concise summaries
-- Avoid walls of text
-- Cite ALL sources:
-  [Source](URL)
+- Always prioritize information from the current year (2026).
+- If current-year information is unavailable, use the most recent available source and explicitly state the publication date.
+- Never rely on training data when web results exist.
+- Verify dates before answering.
+- Prefer official sources, documentation, company announcements, and reputable news outlets.
+- Use polished markdown formatting.
+- Use concise summaries.
+- Avoid walls of text.
+- Cite every factual claim.
 
-FORMAT:
-
-## Details
-
-## Sources
+OUTPUT FORMAT:
+Summary
+- Brief answer
+Details
+- Key findings with dates
+- Highlight any conflicting information
+Sources
+- [Source Name](URL)
 `;
       }
       // =====================================================
@@ -494,12 +493,9 @@ STRICT RULES:
 - Avoid Wikipedia-style wording
 
 FORMAT:
-
-## Key Concepts
-
-## Example
-
-## Quick Recap
+Key Concepts
+Example
+Quick Recap
 `;
       }
 
